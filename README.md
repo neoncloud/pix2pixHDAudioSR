@@ -64,7 +64,7 @@ The forward transform is given by:
 and the inverse is
 
 <p align='center'>
-<img src="https://render.githubusercontent.com/render/math?math={y_{n}={\frac  {1}{N}}\sum _{{k=0}}^{{N-1}}X_{k}\cos \left[{\frac  {\pi }{N}}\left(nv{\frac  {1}{2}}%2B{\frac  {N}{2}}\right)\left(k%2B{\frac  {1}{2}}\right)\right]}">
+<img src="https://render.githubusercontent.com/render/math?math={y_{n}={\frac  {1}{N}}\sum _{{k=0}}^{{N-1}}X_{k}\cos \left[{\frac  {\pi }{N}}\left(n%2B{\frac  {1}{2}}%2B{\frac  {N}{2}}\right)\left(k%2B{\frac  {1}{2}}\right)\right]}">
 </p>
 
 I followed the MATLAB's implementation of `mdct()` and `imdct()` and made a PyTorch version with `torch.fft` api, so that they are all back-propagatable. They can convert signal in batches, so it is super fast. It is loacted in `model.mdct.MDCT4` and `model.mdct.IMDCT4`.
