@@ -53,6 +53,16 @@ def define_D(input_nc, ndf, n_layers_D, norm='instance', use_sigmoid=False, num_
     netD.apply(weights_init)
     return netD
 
+def define_MR_D(ndf, n_layers_D, norm='instance', use_sigmoid=False, num_D=1, gpu_ids=[], base_nfft=2048, window=None, min_value=1e-7, mdct_type='4'):
+    norm_layer = get_norm_layer(norm_type=norm)
+    netD = MultiResolutionDiscriminator(ndf=ndf, n_layers=n_layers_D, norm_layer=norm_layer, num_D=num_D, base_nfft=base_nfft, window=window, min_value=min_value, mdct_type=mdct_type, use_sigmoid=use_sigmoid)
+    print(netD)
+    if len(gpu_ids) > 0:
+        assert(torch.cuda.is_available())
+        netD.cuda(gpu_ids[0])
+    netD.apply(weights_init)
+    return netD
+
 def print_network(net):
     if isinstance(net, list):
         net = net[0]
@@ -122,7 +132,16 @@ class VGGLoss(nn.Module):
         for i in range(len(x_vgg)):
             loss += self.weights[i] * self.criterion(x_vgg[i], y_vgg[i].detach())
         return loss
+class SpecLoss(nn.Module):
+    def __init__(self) -> None:
+        super(SpecLoss, self).__init__()
 
+    def forward(self, x, y):
+        # input shape B,C,H,W
+        N = x.shape[-1]
+        spec_loss = torch.norm(x-y, p='fro', dim=(-1,-2))/torch.norm(x, p='fro', dim=(-1,-2))
+        mag_loss = torch.norm(torch.log10(torch.abs(x)+1e-7) - torch.log10(torch.abs(y)+1e-7), p=1, dim=(-1,-2)) / N
+        return torch.mean(spec_loss+mag_loss)
 ##############################################################################
 # Generator
 ##############################################################################
@@ -328,6 +347,51 @@ class MultiscaleDiscriminator(nn.Module):
             result.append(self.singleD_forward(model, input_downsampled))
             if i != (num_D-1):
                 input_downsampled = self.downsample(input_downsampled)
+        return result
+
+class MultiResolutionDiscriminator(nn.Module):
+    def __init__(self, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d,
+                 use_sigmoid=False, num_D=3, base_nfft=2048, window=None, min_value=1e-7, mdct_type='4'):
+        super(MultiResolutionDiscriminator, self).__init__()
+        self.num_D = num_D
+        self.n_layers = n_layers
+        self.base_nfft = base_nfft
+        self.window = window
+        self.min_value = min_value
+        self.mdct = []
+
+        if mdct_type == '4':
+            from .mdct import MDCT4
+        elif mdct_type == '2':
+            from .mdct import MDCT2
+            from dct.dct_native import DCT_2N_native
+        else:
+            raise NotImplementedError('MDCT type [%s] is not implemented' % mdct_type)
+
+        for i in range(num_D):
+            netD = NLayerDiscriminator(2, ndf, n_layers, norm_layer, use_sigmoid, False)
+            setattr(self, 'layer'+str(i), netD.model)
+
+            N = self.base_nfft//(2**i)
+            if mdct_type == '4':
+                self.mdct.append(MDCT4(n_fft=N, hop_length=N//2, win_length=N, window=self.window, center=True))
+            elif mdct_type == '2':
+                _dct = DCT_2N_native()
+                self.mdct.append(MDCT2(n_fft=N, hop_length=N//2, win_length=N, window=self.window, dct_op=_dct, center=True))
+
+    def singleD_forward(self, model, input):
+        return [model(input)]
+
+    def forward(self, waveform):
+        result = []
+        for i in range(self.num_D):
+            model = getattr(self, 'layer'+str(self.num_D-1-i))
+            spectro = self.mdct[i](waveform)
+            spectro = torch.log10(torch.abs(spectro)+self.min_value)
+            _min = spectro.min(-1,True).values.min(-2,True).values
+            _max = spectro.max(-1,True).values.max(-2,True).values
+            spectro = spectro/(_max-_min)
+            result.append(self.singleD_forward(model, spectro.float()))
         return result
 
 # Defines the PatchGAN discriminator with the specified arguments.

@@ -21,6 +21,7 @@ class BaseOptions():
         self.parser.add_argument('--fp16', action='store_true', default=False, help='train with AMP')
         self.parser.add_argument('--local_rank', type=int, default=0, help='local rank for distributed training')
         self.parser.add_argument('--seed', type=int, default=1234, help='random seed for reproducing results')
+        self.parser.add_argument('--fit_residual', action='store_true', default=False, help='if specified, fit HR-LR than directly fit HR')
 
         # input/output sizes
         self.parser.add_argument('--batchSize', type=int, default=1, help='input batch size')
@@ -38,7 +39,13 @@ class BaseOptions():
         self.parser.add_argument('--no_flip', action='store_true', help='if specified, do not flip the images for data argumentation')
         self.parser.add_argument('--nThreads', default=2, type=int, help='# threads for loading data')
         self.parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
+        self.parser.add_argument('--explicit_encoding', action='store_true', help='if selected, using trick to encode phase')
         self.parser.add_argument('--alpha', type=float, default=0.6, help='phase encoding factor')
+        self.parser.add_argument('--norm_range', type=float, default=(0,1), nargs=2, help='specify the target ditribution range')
+        self.parser.add_argument('--arcsinh_transform', action='store_true', help='if selected, using log(G*x+sqrt(((G*x)^2+1))) to compressing the range of input. Do not use this option with --explicit_encoding')
+        self.parser.add_argument('--arcsinh_gain', type=float, default=500, help='gain of arcsinh_trasform input')
+        self.parser.add_argument('--add_noise', action='store_true', help='if selected, add some noise to input waveform')
+        self.parser.add_argument('--snr', type=float, default=55, help='add noise by SnR (working if --add_noise is selected)')
 
         # for displays
         self.parser.add_argument('--display_winsize', type=int, default=512,  help='display window size')
@@ -63,10 +70,10 @@ class BaseOptions():
         self.parser.add_argument('--nef', type=int, default=16, help='# of encoder filters in the first conv layer')
         self.parser.add_argument('--n_clusters', type=int, default=10, help='number of clusters for features')
 
-        # mask options
+        # input mask options
         self.parser.add_argument('--mask', action='store_true', help='mask high freq conponent of lr spectro')
+        self.parser.add_argument('--mask_hr', action='store_true', help='mask high freq conponent of hr spectro')
         self.parser.add_argument('--mask_mode', type=str, default=None, help='[None|mode0|mode1]')
-        self.parser.add_argument('--explicit_encoding', action='store_true', help='if selected, using trick to encode phase')
         self.parser.add_argument('--min_value', type=float, default=1e-7, help='minimum value to cutoff the spectrogram')
 
         self.initialized = True

@@ -18,6 +18,8 @@ class AudioDataset(BaseDataset):
         self.win_length = opt.win_length
         self.audio_file = self.get_files(opt.dataroot)
         self.center = opt.center
+        self.add_noise = opt.add_noise
+        self.snr = opt.snr
 
         torch.manual_seed(opt.seed)
 
@@ -52,7 +54,13 @@ class AudioDataset(BaseDataset):
                     break
                 except:
                     i += 1
-
+        if self.add_noise:
+            noise = torch.randn(waveform.size())
+            noise = noise-noise.mean()
+            signal_power = torch.sum(waveform**2)/self.segment_length
+            noise_var = signal_power / 10**(self.snr/10)
+            noise = torch.sqrt(noise_var)/noise.std()*noise
+            waveform = waveform + noise
         hr_waveform = aF.resample(waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.hr_sampling_rate)
         lr_waveform = aF.resample(waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.lr_sampling_rate)
         lr_waveform = aF.resample(waveform=lr_waveform, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)

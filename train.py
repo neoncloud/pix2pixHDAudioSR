@@ -10,7 +10,7 @@ from torch.autograd import Variable
 def lcm(a,b): return abs(a * b)/math.gcd(a,b) if a and b else 0
 
 from data.data_loader import CreateDataLoader
-from models.mdct import IMDCT2
+from models.mdct import IMDCT4
 from models.models import create_model
 from options.train_options import TrainOptions
 from util.visualizer import Visualizer
@@ -54,10 +54,10 @@ visualizer = Visualizer(opt)
 optimizer_G, optimizer_D = model.optimizer_G, model.optimizer_D
 
 # IMDCT for evaluation
-from util.util import kbdwin, imdct
-from dct.dct import IDCT
-_idct = IDCT()
-_imdct = IMDCT2(window=kbdwin, win_length=opt.win_length, hop_length=opt.hop_length, n_fft=opt.n_fft, center=opt.center, out_length=opt.segment_length, device = 'cuda',idct_op=_idct)
+# from util.util import kbdwin, imdct
+# # from dct.dct import IDCT
+# # _idct = IDCT()
+# _imdct = IMDCT4(window=kbdwin, win_length=opt.win_length, hop_length=opt.hop_length, n_fft=opt.n_fft, center=opt.center, out_length=opt.segment_length, device = 'cuda')
 
 if opt.fp16:
     from torch.cuda.amp import autocast as autocast
@@ -104,8 +104,7 @@ def eval_model():
         hr_audio = eval_data['image']
         with torch.no_grad():
             sr_spectro, lr_pha, norm_param, lr_spectro = model.inference(lr_audio, None)
-            up_ratio = opt.hr_sampling_rate / opt.lr_sampling_rate
-            sr_audio = imdct(spectro=sr_spectro, pha=lr_pha, norm_param=norm_param, _imdct=_imdct, up_ratio=up_ratio, explicit_encoding=opt.explicit_encoding)
+            sr_audio = model.to_audio(sr_spectro, norm_param, lr_pha)
             _mse,_snr_sr,_snr_lr,_ssnr_sr,_ssnr_lr,_pesq,_lsd = compute_matrics(hr_audio.squeeze(), lr_audio.squeeze(), sr_audio.squeeze(), opt)
             err.append(_mse)
             snr.append((_snr_lr, _snr_sr))
@@ -156,8 +155,8 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         loss_dict = dict(zip(model.loss_names, losses))
 
         # Calculate final loss scalar
-        loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5 + (loss_dict.get('D_fake_t',0) + loss_dict.get('D_real_t',0))*0.5
-        loss_G = loss_dict['G_GAN'] + loss_dict.get('G_mat',0) + loss_dict.get('G_GAN_Feat',0) + loss_dict.get('G_VGG',0) + loss_dict.get('G_GAN_t',0)
+        loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5 + (loss_dict.get('D_fake_t',0) + loss_dict.get('D_real_t',0))*0.5 + (loss_dict.get('D_fake_mr',0) + loss_dict.get('D_real_mr',0))*0.5
+        loss_G = loss_dict['G_GAN'] + loss_dict.get('G_mat',0) + loss_dict.get('G_GAN_Feat',0) + loss_dict.get('G_VGG',0) + loss_dict.get('G_GAN_t',0) + loss_dict.get('G_GAN_mr',0)
 
         ############### Backward Pass ####################
         # update generator weights
