@@ -203,7 +203,7 @@ class Pix2PixHDModel(BaseModel):
             elif self.opt.phase_encoding_mode == 'scale':
                 pha = pha*0.5
         log_spectro = (log_spectro-audio_min)/(audio_max-audio_min)
-        #log_spectro = log_spectro*(self.opt.norm_range[1]-self.opt.norm_range[0])+self.opt.norm_range[0]
+        log_spectro = log_spectro*(self.opt.norm_range[1]-self.opt.norm_range[0])+self.opt.norm_range[0]
             # log_audio @ [-1,1], singal peak
 
         if mask:
@@ -243,7 +243,7 @@ class Pix2PixHDModel(BaseModel):
 
     def denormalize(self, log_spectro, norm_param):
         spectro = (log_spectro-self.opt.norm_range[0])/(self.opt.norm_range[1]-self.opt.norm_range[0])
-        spectro = torch.abs(log_spectro)*(norm_param['max'].to(self.device)-norm_param['min'].to(self.device))+norm_param['min'].to(self.device)
+        spectro = log_spectro*(norm_param['max'].to(self.device)-norm_param['min'].to(self.device))+norm_param['min'].to(self.device)
         #log_mag = log_mag*norm_param['std']+norm_param['mean']
         if self.opt.arcsinh_transform:
             return torch.sinh(spectro*torch.log(torch.Tensor([10])).to(self.device))/self.opt.arcsinh_gain
@@ -254,6 +254,8 @@ class Pix2PixHDModel(BaseModel):
         spectro = self.denormalize(log_spectro, norm_param)
         if self.opt.explicit_encoding:
             spectro = (spectro[...,0,:,:]-spectro[...,1,:,:])/(2*self.opt.alpha-1)
+        elif self.opt.arcsinh_transform:
+            pass
         else:
             if self.up_ratio > 1:
                 size = pha.size(-2)
