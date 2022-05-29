@@ -4,6 +4,7 @@ results/
 build/
 dist/
 datasets/
+generated/
 *.tgz
 *.tmp
 .vscode/
