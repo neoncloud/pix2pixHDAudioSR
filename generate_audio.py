@@ -33,7 +33,7 @@ with torch.no_grad():
     for i, data in enumerate(dataset):
         sr_spectro, lr_pha, norm_param, lr_spectro = model.inference(data['label'], None)
         print(sr_spectro.size())
-        spectro_mag.append(sr_spectro.abs())
+        spectro_mag.append(sr_spectro)
         spectro_pha.append(lr_pha)
         norm_params.append(norm_param)
 
