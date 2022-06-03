@@ -82,6 +82,7 @@ display_delta = total_steps % opt.display_freq
 print_delta = total_steps % opt.print_freq
 save_delta = total_steps % opt.save_latest_freq
 eval_delta = total_steps % opt.eval_freq if opt.validation_split > 0 else -1
+loss_update_delta = total_steps % opt.loss_update_freq if opt.use_time_D or opt.use_match_loss else -1
 
 # Safe ctrl-c
 end = False
@@ -139,6 +140,8 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     epoch_start_time = time.time()
     if epoch != start_epoch:
         epoch_iter = epoch_iter % dataset_size
+    if epoch > opt.niter_limit_aux:
+        model.limit_aux_loss = True
     for i, data in enumerate(dataset, start=epoch_iter):
         if end:
             print('exiting and saving the model at the epoch %d, iters %d' %
@@ -224,6 +227,11 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         if total_steps % opt.eval_freq == eval_delta:
             eval_model()
             torch.cuda.empty_cache()
+        if total_steps % opt.loss_update_freq == loss_update_delta:
+            if opt.use_match_loss:
+                model.update_match_loss_scaler()
+            if opt.use_time_D:
+                model.update_time_D_loss_scaler()
 
         if epoch_iter >= dataset_size:
             break

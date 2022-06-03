@@ -41,7 +41,10 @@ with torch.no_grad():
 up_ratio=opt.hr_sampling_rate / opt.lr_sampling_rate
 audio = []
 for m,n,p in zip(spectro_mag,norm_params,spectro_pha):
-    audio.append(model.to_audio(m,n,p))
+    if opt.gen_overlap == 0:
+        audio.append(model.to_audio(m,n,p))
+    else:
+        audio.append(model.to_audio(m,n,p)[...,opt.gen_overlap//2:-opt.gen_overlap//2])
 
 # Concatenate the audio
 audio = torch.cat(audio,dim=0).view(1,-1)

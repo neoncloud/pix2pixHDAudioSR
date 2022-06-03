@@ -48,6 +48,7 @@ class CustomDatasetDataLoader(BaseDataLoader):
                 batch_size=opt.batchSize,
                 sampler=train_sampler,
                 num_workers=int(opt.nThreads),
+                prefetch_factor=8,
                 pin_memory=True)
             if len(self.val_indices) != 0:
                 self.eval_data_lenth = len(self.val_indices)

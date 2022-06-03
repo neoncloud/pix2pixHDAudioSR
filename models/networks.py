@@ -3,6 +3,7 @@ import torch.nn as nn
 import functools
 from torch.autograd import Variable
 import numpy as np
+from torch.nn.functional import interpolate
 
 ###############################################################################
 # Functions
@@ -25,13 +26,13 @@ def get_norm_layer(norm_type='instance'):
     return norm_layer
 
 def define_G(input_nc, output_nc, ngf, netG, n_downsample_global=3, n_blocks_global=9, n_local_enhancers=1,
-             n_blocks_local=3, norm='instance', gpu_ids=[]):
+             n_blocks_local=3, norm='instance', gpu_ids=[], upsample_type='transconv'):
     norm_layer = get_norm_layer(norm_type=norm)
     if netG == 'global':
-        netG = GlobalGenerator(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global, norm_layer)
+        netG = GlobalGenerator(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global, norm_layer, upsample_type=upsample_type)
     elif netG == 'local':
         netG = LocalEnhancer(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global,
-                                  n_local_enhancers, n_blocks_local, norm_layer)
+                                  n_local_enhancers, n_blocks_local, norm_layer, upsample_type=upsample_type)
     elif netG == 'encoder':
         netG = Encoder(input_nc, output_nc, ngf, n_downsample_global, norm_layer)
     else:
@@ -147,13 +148,13 @@ class SpecLoss(nn.Module):
 ##############################################################################
 class LocalEnhancer(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=32, n_downsample_global=3, n_blocks_global=9,
-                 n_local_enhancers=1, n_blocks_local=3, norm_layer=nn.BatchNorm2d, padding_type='reflect'):
+                 n_local_enhancers=1, n_blocks_local=3, norm_layer=nn.BatchNorm2d, padding_type='reflect', upsample_type='transconv'):
         super(LocalEnhancer, self).__init__()
         self.n_local_enhancers = n_local_enhancers
 
         ###### global generator model #####
         ngf_global = ngf * (2**n_local_enhancers)
-        model_global = GlobalGenerator(input_nc, output_nc, ngf_global, n_downsample_global, n_blocks_global, norm_layer).model
+        model_global = GlobalGenerator(input_nc, output_nc, ngf_global, n_downsample_global, n_blocks_global, norm_layer, upsample_type=upsample_type).model
         model_global = [model_global[i] for i in range(len(model_global)-3)] # get rid of final convolution layers
         self.model = nn.Sequential(*model_global)
 
@@ -171,7 +172,13 @@ class LocalEnhancer(nn.Module):
                 model_upsample += [ResnetBlock(ngf_global * 2, padding_type=padding_type, norm_layer=norm_layer)]
 
             ### upsample
-            model_upsample += [nn.ConvTranspose2d(ngf_global * 2, ngf_global, kernel_size=3, stride=2, padding=1, output_padding=1),
+            if upsample_type == 'transconv':
+                upsample_layer = nn.ConvTranspose2d
+            elif upsample_type == 'interpolate':
+                upsample_layer = InterpolateUpsample
+            else:
+                raise NotImplementedError('upsample layer [{:s}] is not found'.format(upsample_type))
+            model_upsample += [upsample_layer(in_channels=ngf_global * 2, out_channels=ngf_global, kernel_size=3, stride=2, padding=1, output_padding=1),
                                norm_layer(ngf_global), nn.ReLU(True)]
 
             ### final convolution
@@ -201,7 +208,7 @@ class LocalEnhancer(nn.Module):
 
 class GlobalGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=64, n_downsampling=3, n_blocks=9, norm_layer=nn.BatchNorm2d,
-                 padding_type='reflect'):
+                 padding_type='reflect', upsample_type='transconv'):
         assert(n_blocks >= 0)
         super(GlobalGenerator, self).__init__()
         activation = nn.ReLU(True)
@@ -219,15 +226,43 @@ class GlobalGenerator(nn.Module):
             model += [ResnetBlock(ngf * mult, padding_type=padding_type, activation=activation, norm_layer=norm_layer)]
 
         ### upsample
+        if upsample_type == 'transconv':
+            upsample_layer = nn.ConvTranspose2d
+        elif upsample_type == 'interpolate':
+            upsample_layer = InterpolateUpsample
+        else:
+            raise NotImplementedError('upsample layer [{:s}] is not found'.format(upsample_type))
         for i in range(n_downsampling):
             mult = 2**(n_downsampling - i)
-            model += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2), kernel_size=3, stride=2, padding=1, output_padding=1),
+            model += [upsample_layer(in_channels=ngf * mult, out_channels=int(ngf * mult / 2), kernel_size=3, stride=2, padding=1, output_padding=1),
                        norm_layer(int(ngf * mult / 2)), activation]
         model += [nn.ReflectionPad2d(3), nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0), nn.Tanh()]
         self.model = nn.Sequential(*model)
 
     def forward(self, input):
         return self.model(input)
+
+class InterpolateUpsample(nn.Module):
+    """
+    An upsampling layer with an optional convolution.
+    :param channels: channels in the inputs and outputs.
+    :param use_conv: a bool determining if a convolution is applied.
+
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(InterpolateUpsample, self).__init__()
+        self.in_channels = kwargs['in_channels']
+        self.out_channels = kwargs['out_channels']
+        self.conv1 = nn.Conv2d(self.in_channels, self.out_channels, 5, padding=1)
+        self.conv2 = nn.Conv2d(self.out_channels, self.out_channels, 3, padding=2)
+
+    def forward(self, x):
+        assert x.shape[1] == self.in_channels
+        x = interpolate(x, scale_factor=2, mode="nearest")
+        x = self.conv1(x)
+        x = self.conv2(x)
+        return x
 
 # Define a resnet block
 class ResnetBlock(nn.Module):

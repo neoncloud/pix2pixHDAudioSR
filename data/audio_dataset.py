@@ -7,6 +7,7 @@ import torchaudio
 import torchaudio.functional as aF
 from data.base_dataset import BaseDataset
 
+
 class AudioDataset(BaseDataset):
     def __init__(self, opt) -> None:
         BaseDataset.__init__(self)
@@ -33,10 +34,12 @@ class AudioDataset(BaseDataset):
         metadata = torchaudio.info(file_path)
         max_audio_start = metadata.num_frames - self.segment_length
         if max_audio_start > 0:
-            offset = torch.randint(low=0, high=max_audio_start, size=(1,)).item()
-            waveform, orig_sample_rate = torchaudio.load(file_path, frame_offset=offset, num_frames=self.segment_length)
+            offset = torch.randint(
+                low=0, high=max_audio_start, size=(1,)).item()
+            waveform, orig_sample_rate = torchaudio.load(
+                file_path, frame_offset=offset, num_frames=self.segment_length)
         else:
-            print("Warning: %s is shorter than segment_length"%file_path, metadata.num_frames)
+            #print("Warning: %s is shorter than segment_length"%file_path, metadata.num_frames)
             waveform, orig_sample_rate = torchaudio.load(file_path)
         return waveform, orig_sample_rate
 
@@ -44,7 +47,7 @@ class AudioDataset(BaseDataset):
         file_path = self.audio_file[idx]
         try:
             waveform, orig_sample_rate = self.readaudio(file_path)
-        except: #try next until success
+        except:  # try next until success
             i = 1
             while 1:
                 print('Load failed!')
@@ -61,13 +64,16 @@ class AudioDataset(BaseDataset):
             noise_var = signal_power / 10**(self.snr/10)
             noise = torch.sqrt(noise_var)/noise.std()*noise
             waveform = waveform + noise
-        hr_waveform = aF.resample(waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.hr_sampling_rate)
-        lr_waveform = aF.resample(waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.lr_sampling_rate)
-        lr_waveform = aF.resample(waveform=lr_waveform, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
-        #lr_waveform = aF.lowpass_biquad(waveform, sample_rate=self.hr_sampling_rate, cutoff_freq = self.lr_sampling_rate//2) #Meet the Nyquest sampling theorem
+        hr_waveform = aF.resample(
+            waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.hr_sampling_rate)
+        lr_waveform = aF.resample(
+            waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.lr_sampling_rate)
+        lr_waveform = aF.resample(
+            waveform=lr_waveform, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
+        # lr_waveform = aF.lowpass_biquad(waveform, sample_rate=self.hr_sampling_rate, cutoff_freq = self.lr_sampling_rate//2) #Meet the Nyquest sampling theorem
         hr = self.seg_pad_audio(hr_waveform)
         lr = self.seg_pad_audio(lr_waveform)
-        return {'image': hr.squeeze(0), 'label': lr.squeeze(0), 'inst':0, 'feat':0, 'path': file_path}
+        return {'image': hr.squeeze(0), 'label': lr.squeeze(0), 'inst': 0, 'feat': 0, 'path': file_path}
 
     def get_files(self, file_path):
         if os.path.isdir(file_path):
@@ -82,7 +88,8 @@ class AudioDataset(BaseDataset):
             root, csv_file = os.path.split(file_path)
             with open(file_path, 'r') as csv_file:
                 csv_reader = csv.reader(csv_file)
-                file_list = [os.path.join(root, item) for sublist in list(csv_reader) for item in sublist]
+                file_list = [os.path.join(root, item) for sublist in list(
+                    csv_reader) for item in sublist]
         print(len(file_list))
         return file_list
 
@@ -91,9 +98,12 @@ class AudioDataset(BaseDataset):
             waveform = waveform[0][:self.segment_length]
         else:
             waveform = F.pad(
-                waveform, (0, self.segment_length - waveform.size(1)), 'constant'
+                waveform, (0, self.segment_length -
+                           waveform.size(1)), 'constant'
             ).data
         return waveform
+
+
 class AudioTestDataset(BaseDataset):
     def __init__(self, opt) -> None:
         BaseDataset.__init__(self)
@@ -105,8 +115,10 @@ class AudioTestDataset(BaseDataset):
         self.win_length = opt.win_length
         self.center = opt.center
         self.dataroot = opt.dataroot
+        self.overlap = opt.gen_overlap
         try:
-            self.raw_audio, self.in_sampling_rate = torchaudio.load(self.dataroot)
+            self.raw_audio, self.in_sampling_rate = torchaudio.load(
+                self.dataroot)
             self.audio_len = self.raw_audio.size(-1)
             print("Audio length:", self.audio_len)
         except:
@@ -114,10 +126,13 @@ class AudioTestDataset(BaseDataset):
             print("load audio failed")
             exit(0)
         if opt.is_lr_input:
-            self.lr_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.hr_sampling_rate)
+            self.lr_audio = aF.resample(
+                waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.hr_sampling_rate)
         else:
-            self.lr_audio = aF.resample(waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.lr_sampling_rate)
-            self.lr_audio = aF.resample(waveform=self.lr_audio, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
+            self.lr_audio = aF.resample(
+                waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.lr_sampling_rate)
+            self.lr_audio = aF.resample(
+                waveform=self.lr_audio, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
         self.seg_audio = self.seg_pad_audio(self.lr_audio)
 
     def __len__(self):
@@ -127,17 +142,20 @@ class AudioTestDataset(BaseDataset):
         return 'AudioMDCTSpectrogramTestDataset'
 
     def __getitem__(self, idx):
-        return {'image': torch.empty(1), 'label': self.seg_audio[idx,:].squeeze(0), 'inst':torch.empty(1), 'feat':torch.empty(1), 'path': self.dataroot}
+        return {'image': torch.empty(1), 'label': self.seg_audio[idx, :].squeeze(0), 'inst': torch.empty(1), 'feat': torch.empty(1), 'path': self.dataroot}
 
     def seg_pad_audio(self, audio):
         audio = audio.squeeze(0)
         length = len(audio)
         if length >= self.segment_length:
             num_segments = int(ceil(length/self.segment_length))
-            audio = F.pad(audio, (0, self.segment_length*num_segments - length), "constant").data
-            audio = audio.unfold(dimension=0,size=self.segment_length,step=self.segment_length)
+            audio = F.pad(audio, (self.overlap//2, self.segment_length *
+                          num_segments - length + self.overlap//2), "constant").data
+            audio = audio.unfold(
+                dimension=0, size=self.segment_length, step=self.segment_length-self.overlap)
         else:
-            audio = F.pad(audio, (0, self.segment_length - length), 'constant').data
+            audio = F.pad(
+                audio, (0, self.segment_length - length), 'constant').data
             audio = audio.unsqueeze(0)
 
         return audio
