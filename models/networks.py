@@ -26,13 +26,13 @@ def get_norm_layer(norm_type='instance'):
     return norm_layer
 
 def define_G(input_nc, output_nc, ngf, netG, n_downsample_global=3, n_blocks_global=9, n_local_enhancers=1,
-             n_blocks_local=3, norm='instance', gpu_ids=[], upsample_type='transconv'):
+             n_blocks_local=3, norm='instance', gpu_ids=[], upsample_type='transconv', n_attn=0):
     norm_layer = get_norm_layer(norm_type=norm)
     if netG == 'global':
-        netG = GlobalGenerator(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global, norm_layer, upsample_type=upsample_type)
+        netG = GlobalGenerator(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global, norm_layer, upsample_type=upsample_type, n_attn=n_attn)
     elif netG == 'local':
         netG = LocalEnhancer(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global,
-                                  n_local_enhancers, n_blocks_local, norm_layer, upsample_type=upsample_type)
+                                  n_local_enhancers, n_blocks_local, norm_layer, upsample_type=upsample_type, n_attn=n_attn)
     elif netG == 'encoder':
         netG = Encoder(input_nc, output_nc, ngf, n_downsample_global, norm_layer)
     else:
@@ -148,13 +148,13 @@ class SpecLoss(nn.Module):
 ##############################################################################
 class LocalEnhancer(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=32, n_downsample_global=3, n_blocks_global=9,
-                 n_local_enhancers=1, n_blocks_local=3, norm_layer=nn.BatchNorm2d, padding_type='reflect', upsample_type='transconv'):
+                 n_local_enhancers=1, n_blocks_local=3, norm_layer=nn.BatchNorm2d, padding_type='reflect', upsample_type='transconv', n_attn=0):
         super(LocalEnhancer, self).__init__()
         self.n_local_enhancers = n_local_enhancers
 
         ###### global generator model #####
         ngf_global = ngf * (2**n_local_enhancers)
-        model_global = GlobalGenerator(input_nc, output_nc, ngf_global, n_downsample_global, n_blocks_global, norm_layer, upsample_type=upsample_type).model
+        model_global = GlobalGenerator(input_nc, output_nc, ngf_global, n_downsample_global, n_blocks_global, norm_layer, upsample_type=upsample_type, n_attn=n_attn).model
         model_global = [model_global[i] for i in range(len(model_global)-3)] # get rid of final convolution layers
         self.model = nn.Sequential(*model_global)
 
@@ -208,7 +208,7 @@ class LocalEnhancer(nn.Module):
 
 class GlobalGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=64, n_downsampling=3, n_blocks=9, norm_layer=nn.BatchNorm2d,
-                 padding_type='reflect', upsample_type='transconv'):
+                 padding_type='reflect', upsample_type='transconv', n_attn=0):
         assert(n_blocks >= 0)
         super(GlobalGenerator, self).__init__()
         activation = nn.ReLU(True)
@@ -222,8 +222,14 @@ class GlobalGenerator(nn.Module):
 
         ### resnet blocks
         mult = 2**n_downsampling
+        bottle_neck = []
         for i in range(n_blocks):
-            model += [ResnetBlock(ngf * mult, padding_type=padding_type, activation=activation, norm_layer=norm_layer)]
+            bottle_neck += [ResnetBlock(ngf * mult, padding_type=padding_type, activation=activation, norm_layer=norm_layer)]
+        if n_attn > 0:
+            middle = n_blocks//2
+            for i in range(n_attn):
+                bottle_neck.insert(middle,AttentionResBlock(ngf * mult))
+        model += bottle_neck
 
         ### upsample
         if upsample_type == 'transconv':
@@ -304,6 +310,29 @@ class ResnetBlock(nn.Module):
 
     def forward(self, x):
         out = x + self.conv_block(x)
+        return out
+
+class AttentionResBlock(nn.Module):
+    def __init__(self, in_dim):
+        super(AttentionResBlock, self).__init__()
+        # Input: CxHxW Output: C//8xHxW
+        self.query_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim//8, kernel_size=1)
+        # Input: CxHxW Output: C//8xHxW
+        self.key_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim//8, kernel_size=1)
+        # Input: CxHxW Output: CxHxW
+        self.value_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim, kernel_size=1)
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x):
+        n, c, h, w = x.shape
+        proj_query = self.query_conv(x).view(n, -1, h*w).permute(0, 2, 1)
+        proj_key = self.key_conv(x).view(n, -1, h*w)
+        energy = torch.bmm(proj_query, proj_key)
+        attention = self.softmax(energy)
+        proj_value = self.value_conv(x).view(n, -1, h*w)
+        out = torch.bmm(proj_value, attention.permute(0,2,1))
+        out = out.view(n, c, h, w)
+        out = out + x
         return out
 
 class Encoder(nn.Module):
