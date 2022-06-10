@@ -13,7 +13,7 @@ import csv
 import numpy as np
 import torch
 from torch.autograd import Variable
-
+from prefetch_generator import BackgroundGenerator
 
 def lcm(a, b): return abs(a * b)/math.gcd(a, b) if a and b else 0
 
@@ -142,7 +142,7 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         epoch_iter = epoch_iter % dataset_size
     if epoch > opt.niter_limit_aux:
         model.limit_aux_loss = True
-    for i, data in enumerate(dataset, start=epoch_iter):
+    for i, data in BackgroundGenerator(enumerate(dataset, start=epoch_iter)):
         if end:
             print('exiting and saving the model at the epoch %d, iters %d' %
                   (epoch, total_steps))

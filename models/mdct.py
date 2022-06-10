@@ -480,8 +480,8 @@ class MDCT4(nn.Module):
         assert self.win_length <= self.n_fft, 'Window lenth %d should be no more than fft length %d'%(self.win_length, self.n_fft)
         assert self.hop_length <= self.win_length, 'You hopped more than one frame'
 
-        self.exp1 = torch.exp(-1j*torch.pi/self.n_fft*torch.arange(start=0, end=self.n_fft,step=1, dtype=torch.float32)).to(self.device)
-        self.exp2 = torch.exp(-1j*(torch.pi/(2*self.n_fft)+torch.pi/4)*torch.arange(start=1, end=self.n_fft, step=2, dtype=torch.float32)).to(self.device)
+        self.exp1 = torch.exp(-1j*torch.pi/self.n_fft*torch.arange(start=0, end=self.n_fft,step=1, dtype=torch.float64)).to(self.device)
+        self.exp2 = torch.exp(-1j*(torch.pi/(2*self.n_fft)+torch.pi/4)*torch.arange(start=1, end=self.n_fft, step=2, dtype=torch.float64)).to(self.device)
 
     def forward(self, signal, return_frames=False):
         # Pad the signal to a proper length
@@ -538,8 +538,8 @@ class IMDCT4(nn.Module):
         assert self.win_length <= self.n_fft, 'Window lenth %d should be no more than fft length %d'%(self.win_length, self.n_fft)
         assert self.hop_length <= self.win_length, 'You hopped more than one frame'
 
-        self.exp1 = torch.exp(-1j*(torch.pi/(2*self.n_fft)+torch.pi/4)*torch.arange(start=1, end=self.n_fft, step=2, dtype=torch.float32)).to(self.device)
-        self.exp2 = torch.exp(-1j*torch.pi/(2*self.n_fft)*torch.arange(start=0, end=2*self.n_fft,step=2, dtype=torch.float32)).to(self.device)
+        self.exp1 = torch.exp(-1j*(torch.pi/(2*self.n_fft)+torch.pi/4)*torch.arange(start=1, end=self.n_fft, step=2, dtype=torch.float64)).to(self.device)
+        self.exp2 = torch.exp(-1j*torch.pi/(2*self.n_fft)*torch.arange(start=0, end=2*self.n_fft,step=2, dtype=torch.float64)).to(self.device)
 
     def forward(self, signal, return_frames=False):
         assert signal.dim() == 3, 'Only tensors shaped in BHW are supported, got tensor of shape %s'%(str(signal.size()))

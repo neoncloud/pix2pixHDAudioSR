@@ -122,4 +122,19 @@ python train.py --name VCTK_hifitts_G5L3_48ngf_arcsinh_fitres_timeD2 --dataroot 
 
 python train.py --name hifitts_G5L3_48ngf_arcsinh_fitres2_interp --dataroot /root/hi_fi_tts_v0/clean.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 128 --gpu_id 2 --fp16 --nThreads 16 --mask --netG local --niter 70 --niter_decay 30 --validation_split 0.01 --center --arcsinh_transform --n_blocks_global 5 --n_blocks_local 3 --ngf 48 --eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 10 --abs_spectro --arcsinh_gain 500 --add_noise --snr 55 --norm_range -1 1 --lr 1.5e-4 --fit_residual --use_match_loss --upsample_type interpolate
 
-python train.py --name VCTK_G4L3_48ngf_arcsinh_fitres_interp_attn --dataroot /mnt/e/VCTK-Corpus/train.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 8 --gpu_id 0 --fp16 --nThreads 16 --mask --netG local --niter 70 --niter_decay 30 --validation_split 0.01 --center --arcsinh_transform --n_blocks_global 4 --n_blocks_local 3 --ngf 48 --eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 10 --abs_spectro --arcsinh_gain 500 --norm_range -1 1 --lr 1.5e-4 --fit_residual --use_match_loss --upsample_type interpolate --n_blocks_attn 1
+python train.py --name VCTK_G4L3_48ngf_arcsinh_fitres_interp_attn --dataroot /root/VCTK-Corpus/train.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 128 --gpu_id 0 --fp16 --nThreads 16 --mask --netG local --niter 70 --niter_decay 30 --validation_split 0.01 --center --arcsinh_transform --n_blocks_global 4 --n_blocks_local 3 --ngf 48 --eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 10 --abs_spectro --arcsinh_gain 500 --norm_range -1 1 --lr 1.5e-4 --fit_residual --use_match_loss --upsample_type interpolate --n_blocks_attn 1
+
+python train.py --name VCTK_G4L3A1_48ngf_arcsinh_fitres_interp_attn_multires3 --dataroot /root/VCTK-Corpus/train.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 128 --gpu_id 0 --fp16 --nThreads 4 --mask --netG local --niter 70 --niter_decay 30 --validation_split 0.01 --center --arcsinh_transform --n_blocks_global 4 --n_blocks_local 3 --ngf 48 --eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 5 --abs_spectro --arcsinh_gain 500 --norm_range -1 1 --fit_residual --upsample_type interpolate --n_blocks_attn 1 --use_multires_D --lambda_mr 0.4
+
+python train.py \
+--name VCTK_G4A3L3A0_48ngf_arcsinh_fitres_interp \
+--dataroot /root/VCTK-Corpus/train.csv --batchSize 144 --validation_split 0.01 \
+--label_nc 0 --output_nc 1 --input_nc 1 --gpu_id 1 --fp16 --nThreads 4 \
+--mask --no_instance --no_vgg_loss --center --arcsinh_transform \
+--abs_spectro --arcsinh_gain 500 --norm_range -1 1 \
+--netG local --n_blocks_global 4 --n_blocks_local 3 --ngf 48 \
+--n_blocks_attn_g 3 --n_blocks_attn_l 0 \
+--fit_residual --upsample_type interpolate \
+--niter 150 --niter_decay 50 \
+--use_multires_D --lambda_mr 0.4 \
+--eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 20
