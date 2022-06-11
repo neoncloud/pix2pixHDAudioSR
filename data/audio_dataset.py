@@ -18,6 +18,7 @@ class AudioDataset(BaseDataset):
         self.hop_length = opt.hop_length
         self.win_length = opt.win_length
         self.audio_file = self.get_files(opt.dataroot)
+        self.audio_len = [0]*len(self.audio_file)
         self.center = opt.center
         self.add_noise = opt.add_noise
         self.snr = opt.snr
@@ -30,9 +31,15 @@ class AudioDataset(BaseDataset):
     def name(self):
         return 'AudioMDCTSpectrogramDataset'
 
-    def readaudio(self, file_path):
-        metadata = torchaudio.info(file_path)
-        max_audio_start = metadata.num_frames - self.segment_length
+    def readaudio(self, idx):
+        file_path = self.audio_file[idx]
+        if self.audio_len[idx] == 0:
+            metadata = torchaudio.info(file_path)
+            audio_length = metadata.num_frames
+            self.audio_len[idx] = audio_length
+        else:
+            audio_length = self.audio_len[idx]
+        max_audio_start = audio_length - self.segment_length
         if max_audio_start > 0:
             offset = torch.randint(
                 low=0, high=max_audio_start, size=(1,)).item()
@@ -44,16 +51,14 @@ class AudioDataset(BaseDataset):
         return waveform, orig_sample_rate
 
     def __getitem__(self, idx):
-        file_path = self.audio_file[idx]
         try:
-            waveform, orig_sample_rate = self.readaudio(file_path)
+            waveform, orig_sample_rate = self.readaudio(idx)
         except:  # try next until success
             i = 1
             while 1:
                 print('Load failed!')
-                file_path = self.audio_file[idx+i]
                 try:
-                    waveform, orig_sample_rate = self.readaudio(file_path)
+                    waveform, orig_sample_rate = self.readaudio(idx+i)
                     break
                 except:
                     i += 1
@@ -73,7 +78,7 @@ class AudioDataset(BaseDataset):
         # lr_waveform = aF.lowpass_biquad(waveform, sample_rate=self.hr_sampling_rate, cutoff_freq = self.lr_sampling_rate//2) #Meet the Nyquest sampling theorem
         hr = self.seg_pad_audio(hr_waveform)
         lr = self.seg_pad_audio(lr_waveform)
-        return {'image': hr.squeeze(0), 'label': lr.squeeze(0), 'inst': 0, 'feat': 0, 'path': file_path}
+        return {'image': hr.squeeze(0), 'label': lr.squeeze(0), 'inst': torch.empty(1), 'feat': torch.empty(1)}
 
     def get_files(self, file_path):
         if os.path.isdir(file_path):
