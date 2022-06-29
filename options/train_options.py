@@ -17,6 +17,7 @@ class TrainOptions(BaseOptions):
 
         # for training
         self.parser.add_argument('--continue_train', action='store_true', help='continue training: load the latest model')
+        self.parser.add_argument('--freeze', action='store_true', help='freeze downsample in G')
         self.parser.add_argument('--load_pretrain', type=str, default='', help='load the pretrained model from the specified location')
         self.parser.add_argument('--which_epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
         self.parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
@@ -32,6 +33,7 @@ class TrainOptions(BaseOptions):
 
         # for discriminators
         self.parser.add_argument('--num_D', type=int, default=2, help='number of discriminators to use')
+        self.parser.add_argument('--num_mr_D', type=int, default=2, help='number of multires discriminators to use')
         self.parser.add_argument('--n_layers_D', type=int, default=3, help='only used if which_model_netD==n_layers')
         self.parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer')
         self.parser.add_argument('--lambda_feat', type=float, default=10.0, help='weight for feature matching loss')
@@ -59,6 +61,7 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--segment_length', type=int, default=FRAME_LENGTH, help='audio segment length')
         self.parser.add_argument('--gen_overlap', type=int, default=0, help='overlap length when generating. It is helpful to eliminate the transient effect')
         self.parser.add_argument('--n_fft', type=int, default=N_FFT, help='num of FFT points')
+        self.parser.add_argument('--bins', type=int, default=BINS, help='num of time bins. This does not effect anything.')
         self.parser.add_argument('--hop_length', type=int, default=HOP_LENGTH, help='sliding window increament')
         self.parser.add_argument('--win_length', type=int, default=WIN_LENGTH, help='sliding window width')
         self.parser.add_argument('--center', action='store_true', help='centered FFT')

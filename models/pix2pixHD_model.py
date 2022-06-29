@@ -40,9 +40,14 @@ class Pix2PixHDModel(BaseModel):
         #self._idct = IDCT_2N_native()
         self._imdct = IMDCT4(n_fft=self.opt.n_fft, hop_length=self.opt.hop_length,
                              win_length=self.opt.win_length, window=self.window, device=self.device)
+        self.lr_smooth_mask = None
+        self.sr_smooth_mask = None
 
         # define networks
         # Generator network
+
+        # set freeze network
+        self.freeze = opt.freeze
         netG_input_nc = input_nc
         if not opt.no_instance:
             netG_input_nc += 1
@@ -50,8 +55,8 @@ class Pix2PixHDModel(BaseModel):
             netG_input_nc += opt.feat_num
         self.netG = networks.define_G(netG_input_nc, opt.output_nc, opt.ngf, opt.netG,
                                       opt.n_downsample_global, opt.n_blocks_global, opt.n_local_enhancers,
-                                      opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids, upsample_type=opt.upsample_type, n_attn_g=opt.n_blocks_attn_g, n_attn_l=opt.n_blocks_attn_l)
-
+                                      opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids, upsample_type=opt.upsample_type, downsample_type=opt.downsample_type, input_size=(opt.bins, opt.n_fft//2), n_attn_g=opt.n_blocks_attn_g, n_attn_l=opt.n_blocks_attn_l, proj_factor_g=opt.proj_factor_g, heads_g=opt.heads_g, dim_head_g=opt.dim_head_g, proj_factor_l=opt.proj_factor_l, heads_l=opt.heads_l, dim_head_l=opt.dim_head_l)
+        self.netG.set_freeze(opt.freeze)
         # Discriminator network
         if self.isTrain:
             use_sigmoid = opt.no_lsgan
@@ -60,7 +65,8 @@ class Pix2PixHDModel(BaseModel):
                 netD_input_nc += 1
             if self.opt.abs_spectro and self.opt.arcsinh_transform:
                 # discriminate on [LR, HR/SR, abs(HR/SR)]
-                netD_input_nc += 1
+                #netD_input_nc += 1
+                pass
             self.netD = networks.define_D(netD_input_nc, opt.ndf, opt.n_layers_D, opt.norm, use_sigmoid,
                                           opt.num_D, not opt.no_ganFeat_loss, gpu_ids=self.gpu_ids)
             if opt.use_hifigan_D:
@@ -71,7 +77,7 @@ class Pix2PixHDModel(BaseModel):
                     2, opt.ndf, opt.n_layers_D, opt.norm, use_sigmoid, opt.num_D, False, gpu_ids=self.gpu_ids)
             if opt.use_multires_D:
                 self.multires_D = networks.define_MR_D(opt.ndf, opt.n_layers_D, netD_input_nc, opt.norm, use_sigmoid,
-                                                       opt.num_D, gpu_ids=self.gpu_ids, base_nfft=opt.n_fft, window=kbdwin, min_value=opt.min_value, mdct_type='4', normalizer=self.normalize, getIntermFeat=not opt.no_ganFeat_loss, abs_spectro=opt.abs_spectro)
+                                                       opt.num_mr_D, gpu_ids=self.gpu_ids, base_nfft=opt.n_fft, window=kbdwin, min_value=opt.min_value, mdct_type='4', normalizer=self.normalize, getIntermFeat=not opt.no_ganFeat_loss, abs_spectro=opt.abs_spectro)
 
         # Encoder network
         if self.gen_features:
@@ -162,7 +168,7 @@ class Pix2PixHDModel(BaseModel):
             print('Total number of parameters of G: %d' %
                   (sum([param.numel() for param in params])))
             self.optimizer_G = torch.optim.Adam(
-                params, lr=opt.lr, betas=(opt.beta1, 0.999))
+                filter(lambda p: p.requires_grad, params), lr=opt.lr, betas=(opt.beta1, 0.999))
 
             # optimizer D
             params = list(self.netD.parameters())
@@ -177,14 +183,14 @@ class Pix2PixHDModel(BaseModel):
             self.optimizer_D = torch.optim.Adam(
                 params, lr=opt.lr, betas=(opt.beta1, 0.999))
 
-    def to_spectro(self, audio, mask=False, mask_size=None):
+    def to_spectro(self, audio, mask=False, mask_size=None, smooth=False):
         # Forward Transformation (MDCT)
         if self.opt.use_time_D:
             spectro, frames = self._mdct(audio.to(self.device), True)
-            spectro = spectro.unsqueeze(1).permute(0, 1, 3, 2)
+            spectro = spectro.unsqueeze(1)
         else:
             spectro = self._mdct(audio.to(self.device)).unsqueeze(
-                1).permute(0, 1, 3, 2)
+                1)
             frames = None
         pha = torch.sign(spectro)
 
@@ -215,21 +221,35 @@ class Pix2PixHDModel(BaseModel):
                 pha = pha*0.5
         # log_audio @ [-1,1], singal peak
 
+        if smooth:
+            if self.lr_smooth_mask is None:
+                smooth = self.opt.smooth
+                assert smooth < 1
+                size = log_spectro.size()
+                smooth_size = int(smooth*size[3]*(1/self.up_ratio))
+                zero_size = int(size[3]*(1-1/self.up_ratio))
+                one_size = size[3]-smooth_size-zero_size
+                self.lr_smooth_mask = torch.cat(
+                    (torch.ones(one_size),
+                     torch.linspace(1, 0, smooth_size),
+                     torch.zeros(zero_size)),
+                    dim=0
+                ).to(self.device)[None, :].expand(size[2], -1)
+            log_spectro = log_spectro*self.lr_smooth_mask
+
         if mask:
             # mask the lr spectro so that it does not learn from garbage infomation
             size = log_spectro.size()
             if mask_size is None:
-                mask_size = int(size[2]*(1-1/self.up_ratio))
+                mask_size = int(size[3]*(1-1/self.up_ratio))
 
             # fill the blank mask with noise
-            _noise = torch.randn(
-                size[0], size[1], mask_size, size[3], device=self.device)
+            _noise = torch.randn(*size[:3], mask_size, device=self.device)
             _noise_min = _noise.min()
             _noise_max = _noise.max()
 
             if self.opt.mask_mode == None or self.opt.fit_residual:
-                _noise = torch.zeros(
-                    size[0], size[1], mask_size, size[3], device=self.device)
+                _noise = torch.zeros(*size[:3], mask_size, device=self.device)
             elif self.opt.mask_mode == 'mode0':
                 # fill empty with randn noise, single peak, centered at 0
                 _noise = _noise/(_noise_max - _noise_min)
@@ -249,9 +269,9 @@ class Pix2PixHDModel(BaseModel):
 
             log_spectro = torch.cat(
                 (
-                    log_spectro[:, :, :-mask_size, :],
+                    log_spectro[:, :, :, :-mask_size],
                     _noise
-                ), dim=2)
+                ), dim=3)
         return log_spectro.float(), pha, {'max': audio_max, 'min': audio_min, 'mean': mean, 'std': std, 'frames': frames}
 
     def normalize(self, spectro):
@@ -280,10 +300,14 @@ class Pix2PixHDModel(BaseModel):
 
         mean = log_spectro.mean().float()
         std = log_spectro.var().sqrt().float()
-        audio_max = log_spectro.flatten(-2).max(dim=-
-                                                1).values[:, :, None, None].float()
-        audio_min = log_spectro.flatten(-2).min(dim=-
-                                                1).values[:, :, None, None].float()
+        if not self.opt.abs_norm:
+            audio_max = log_spectro.flatten(-2).max(dim=-
+                                                    1).values[:, :, None, None].float()
+            audio_min = log_spectro.flatten(-2).min(dim=-
+                                                    1).values[:, :, None, None].float()
+        else:
+            audio_min = torch.Tensor([self.opt.src_range[0]])[None,None,None,:].to(self.device)
+            audio_max = torch.Tensor([self.opt.src_range[1]])[None,None,None,:].to(self.device)
         log_spectro = (log_spectro-audio_min)/(audio_max-audio_min)
         log_spectro = log_spectro * \
             (self.opt.norm_range[1]-self.opt.norm_range[0]
@@ -293,9 +317,10 @@ class Pix2PixHDModel(BaseModel):
 
     def denormalize(self, log_spectro, norm_param):
         log_spectro = (
-            log_spectro-self.opt.norm_range[0])/(self.opt.norm_range[1]-self.opt.norm_range[0])
-        log_spectro = log_spectro*(norm_param['max'].to(self.device)-norm_param['min'].to(
-            self.device))+norm_param['min'].to(self.device)
+            log_spectro.to(torch.float64)-self.opt.norm_range[0])/(self.opt.norm_range[1]-self.opt.norm_range[0])
+        _min = norm_param['min'].to(device=self.device, dtype=torch.float64)
+        _max = norm_param['max'].to(device=self.device, dtype=torch.float64)
+        log_spectro = log_spectro*(_max-_min)+_min
         #log_mag = log_mag*norm_param['std']+norm_param['mean']
         if self.opt.arcsinh_transform:
             return torch.sinh(log_spectro*torch.log(torch.Tensor([10])).to(self.device))/self.opt.arcsinh_gain
@@ -320,10 +345,9 @@ class Pix2PixHDModel(BaseModel):
                 spectro = spectro*pha
 
         if self.opt.explicit_encoding:
-            audio = self._imdct(spectro.permute(0, 2, 1).contiguous())
+            audio = self._imdct(spectro)
         else:
-            audio = self._imdct(spectro.squeeze(
-                1).permute(0, 2, 1).contiguous())
+            audio = self._imdct(spectro.squeeze(1))
         return audio
 
     def to_frames(self, log_spectro, norm_param):
@@ -331,8 +355,7 @@ class Pix2PixHDModel(BaseModel):
         if self.opt.explicit_encoding:
             spectro = (spectro[..., 0, :, :] -
                        spectro[..., 1, :, :])/(2*self.opt.alpha-1)
-        _, frames = self._imdct(
-            spectro.squeeze().permute(0, 2, 1).contiguous(), True)
+        _, frames = self._imdct(spectro.squeeze(), True)
         return frames
 
     def norm_frames(self, frames):
@@ -356,7 +379,7 @@ class Pix2PixHDModel(BaseModel):
 
         with torch.no_grad():
             lr_spectro, lr_pha, lr_norm_param = self.to_spectro(
-                lr_audio, mask=True)
+                lr_audio, mask=self.opt.mask, smooth=self.opt.smooth > 0)
         #lr_spectro = lr_spectro.data.cuda()
 
         """ if self.opt.label_nc == 0:
@@ -435,9 +458,28 @@ class Pix2PixHDModel(BaseModel):
         #     input_concat = lr_spectro
 
         #### G Forward ####
-        sr_spectro = self.netG.forward(lr_spectro)
+        if self.opt.abs_spectro and self.opt.arcsinh_transform:
+            lr_input = lr_spectro.abs()*2+self.opt.norm_range[0]
+            lr_input = torch.cat((lr_spectro, lr_input), dim=1)
+        else:
+            lr_input = lr_spectro
+        sr_spectro = self.netG.forward(lr_input)
         #### G Forward ####
         if self.opt.fit_residual:
+            if self.opt.smooth > 0:
+                if self.sr_smooth_mask is None:
+                    smooth = self.opt.smooth
+                    size = sr_spectro.size()
+                    smooth_size = int(smooth*size[3]*(1/self.up_ratio))
+                    zero_size = int(size[3]*(1/self.up_ratio))
+                    one_size = size[3]-smooth_size-zero_size
+                    self.sr_smooth_mask = torch.cat(
+                        (torch.ones(one_size),
+                         torch.linspace(1, 0, smooth_size),
+                         torch.ones(zero_size)),
+                        dim=0
+                    ).to(self.device)[None, :].expand(size[2], -1)
+                sr_spectro = sr_spectro*self.sr_smooth_mask
             sr_spectro = sr_spectro+lr_spectro
         if self.opt.explicit_encoding:
             sr_pha = torch.sign(
@@ -518,12 +560,10 @@ class Pix2PixHDModel(BaseModel):
                 _pred_fake_time, False)*self.opt.lambda_time*scaler
         if self.opt.use_time_D:
             scaler = self.time_D_count/self.time_D_count_max
-            lr_frames = lr_norm_param['frames'][:,
-                                                None, :, :].permute(0, 1, 3, 2)
-            hr_frames = hr_norm_param['frames'][:,
-                                                None, :, :].permute(0, 1, 3, 2)
-            sr_frames = self.to_frames(sr_spectro, lr_norm_param)[:, None, :, :].permute(
-                0, 1, 3, 2).to(torch.half if self.opt.fp16 else torch.float)
+            lr_frames = lr_norm_param['frames'][:, None, :, :]
+            hr_frames = hr_norm_param['frames'][:, None, :, :]
+            sr_frames = self.to_frames(sr_spectro, lr_norm_param)[:, None, :, :].to(
+                torch.half if self.opt.fp16 else torch.float)
 
             lr_frames = self.norm_frames(lr_frames)
             hr_frames = self.norm_frames(hr_frames)
@@ -648,8 +688,27 @@ class Pix2PixHDModel(BaseModel):
             #     input_concat = torch.cat((lr_spectro, feat_map), dim=1)
             # else:
             #     input_concat = lr_spectro
-            sr_spectro = self.netG.forward(lr_spectro)
+            if self.opt.abs_spectro and self.opt.arcsinh_transform:
+                lr_input = lr_spectro.abs()*2+self.opt.norm_range[0]
+                lr_input = torch.cat((lr_spectro, lr_input), dim=1)
+            else:
+                lr_input = lr_spectro
+            sr_spectro = self.netG.forward(lr_input)
             if self.opt.fit_residual:
+                if self.opt.smooth > 0:
+                    if self.sr_smooth_mask is None:
+                        smooth = self.opt.smooth
+                        size = sr_spectro.size()
+                        smooth_size = int(smooth*size[2]*(1/self.up_ratio))
+                        zero_size = int(size[2]*(1/self.up_ratio))
+                        one_size = size[2]-smooth_size-zero_size
+                        self.sr_smooth_mask = torch.cat(
+                            (torch.ones(one_size),
+                             torch.linspace(1, 0, smooth_size),
+                             torch.ones(zero_size)),
+                            dim=0
+                        ).to(self.device)[:, None].expand(-1, size[3])
+                    sr_spectro = sr_spectro*self.sr_smooth_mask
                 sr_spectro = sr_spectro+lr_spectro
 
         return sr_spectro, lr_pha, lr_norm_param, lr_spectro

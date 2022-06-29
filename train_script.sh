@@ -132,14 +132,155 @@ python train.py --name VCTK_G4L3_48ngf_arcsinh_fitres_interp_attn --dataroot /ro
 python train.py --name VCTK_G4L3A1_48ngf_arcsinh_fitres_interp_attn_multires3 --dataroot /root/VCTK-Corpus/train.csv --no_instance --no_vgg_loss --label_nc 0 --output_nc 1 --input_nc 1 --batchSize 128 --gpu_id 0 --fp16 --nThreads 4 --mask --netG local --niter 70 --niter_decay 30 --validation_split 0.01 --center --arcsinh_transform --n_blocks_global 4 --n_blocks_local 3 --ngf 48 --eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 5 --abs_spectro --arcsinh_gain 500 --norm_range -1 1 --fit_residual --upsample_type interpolate --n_blocks_attn 1 --use_multires_D --lambda_mr 0.4
 
 python train.py \
---name VCTK_G4A3L3A0_48ngf_arcsinh_fitres_interp \
---dataroot /root/VCTK-Corpus/train.csv --batchSize 144 --validation_split 0.01 \
+--name VCTK_G4A3L3A0_48ngf_arcsinh_resconv_interp \
+--dataroot /mnt/e/VCTK-Corpus/train.csv --batchSize 16 --validation_split 0.01 \
 --label_nc 0 --output_nc 1 --input_nc 1 --gpu_id 1 --fp16 --nThreads 4 \
 --mask --no_instance --no_vgg_loss --center --arcsinh_transform \
 --abs_spectro --arcsinh_gain 500 --norm_range -1 1 \
 --netG local --n_blocks_global 4 --n_blocks_local 3 --ngf 48 \
---n_blocks_attn_g 3 --n_blocks_attn_l 0 \
---fit_residual --upsample_type interpolate \
+--n_blocks_attn_g 2 --n_blocks_attn_l 0 \
+--fit_residual --upsample_type interpolate --downsample_type resconv \
 --niter 150 --niter_decay 50 \
---use_multires_D --lambda_mr 0.4 \
 --eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 20
+
+python train.py \
+--name VCTK_G0A3L0A2_48ngf_arcsinh_resconv_interp \
+--dataroot /home/neoncloud/VCTK-Corpus/train.csv --batchSize 16 --validation_split 0.01 \
+--label_nc 0 --output_nc 1 --input_nc 1 --gpu_id 0 --fp16 --nThreads 4 \
+--mask --no_instance --no_vgg_loss --center --arcsinh_transform \
+--abs_spectro --arcsinh_gain 500 --norm_range -1 1 \
+--netG local --n_blocks_global 0 --n_blocks_local 0 --ngf 48 \
+--n_blocks_attn_g 3 --dim_head_g 128 --heads_g 4\
+--n_blocks_attn_l 2 --dim_head_l 64 --heads_l 8\
+--fit_residual --upsample_type interpolate --downsample_type conv \
+--niter 70 --niter_decay 30 \
+--eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 3 --print_freq 16
+
+python generate_audio.py \
+--phase test --load_pretrain ./checkpoints/VCTK_G4A3L3A0_48ngf_arcsinh_resconv_interp \
+--name GEN_VCTK_G4A3L3A0_48ngf_arcsinh_resconv_interp \
+--dataroot /home/neoncloud/VCTK-Corpus/wav48/p225/p225_002.wav --batchSize 2 --validation_split 0 \
+--label_nc 0 --output_nc 1 --input_nc 1 --gpu_id 0 --fp16 --nThreads 1 \
+--mask --no_instance --no_vgg_loss --center --arcsinh_transform \
+--abs_spectro --arcsinh_gain 500 --norm_range -1 1 \
+--netG local --n_blocks_global 4 --n_blocks_local 3 --ngf 48 \
+--n_blocks_attn_g 1 --n_blocks_attn_l 0 \
+--fit_residual --upsample_type interpolate --downsample_type resconv
+
+python generate_audio.py \
+--phase test --load_pretrain ./checkpoints/VCTK_G0A5_8h_48ngf_arcsinh_resconv_interp --name GEN_VCTK_G0A5_8h_48ngf_arcsinh_resconv_interp \
+--dataroot /home/neoncloud/VCTK-Corpus/wav48/p225/p225_003.wav --batchSize 2 --validation_split 0.00 \
+--label_nc 0 --output_nc 1 --input_nc 1 --gpu_id 0 --fp16 --nThreads 1 \
+--mask --no_instance --no_vgg_loss --center --arcsinh_transform \
+--abs_spectro --arcsinh_gain 500 --norm_range -1 1 \
+--netG global --n_blocks_global 0 --n_blocks_local 0 --ngf 48 \
+--n_blocks_attn_g 5 --dim_head_g 128 --heads_g 8 --proj_factor_g 4 \
+--fit_residual --upsample_type interpolate --downsample_type resconv
+
+#Total number of parameters of G: 13221569
+python train.py \
+--name VCTK_G0A4L2_8h_32ngf_mrD_nomask_conv_interp \
+--dataroot /home/neoncloud/VCTK-Corpus/train.csv --batchSize 64 --validation_split 0.01 \
+--label_nc 0 --output_nc 1 --input_nc 1 --gpu_id 0 --fp16 --nThreads 4 \
+--no_instance --no_vgg_loss --center --arcsinh_transform \
+--abs_spectro --arcsinh_gain 600 --norm_range -1 1 \
+--netG local --n_blocks_global 0 --n_blocks_local 2 --ngf 32 \
+--n_blocks_attn_g 4 --dim_head_g 32 --heads_g 8 --proj_factor_g 4 \
+--fit_residual --upsample_type interpolate --downsample_type conv \
+--use_multires_D --lambda_mr 0.3 --num_D 2 --num_mr_D 3 --ndf 48 \
+--niter 70 --niter_decay 30 \
+--eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 3 --print_freq 240
+
+python generate_audio.py --name GEN_VCTK_G0A4L2_8h_32ngf_mrD_nomask_conv_interp \
+--phase test --load_pretrain ./checkpoints/VCTK_G0A4L2_8h_32ngf_mrD_nomask_conv_interp \
+--dataroot /home/neoncloud/VCTK-Corpus/wav48/p225/p225_003.wav --batchSize 2 --validation_split 0.00 \
+--label_nc 0 --output_nc 1 --input_nc 1 --gpu_id 0 --fp16 --nThreads 2 \
+--no_instance --no_vgg_loss --center --arcsinh_transform \
+--abs_spectro --arcsinh_gain 600 --norm_range -1 1 \
+--netG local --n_blocks_global 0 --n_blocks_local 2 --ngf 32 \
+--n_blocks_attn_g 4 --dim_head_g 32 --heads_g 8 --proj_factor_g 4 \
+--fit_residual --upsample_type interpolate --downsample_type conv
+
+python train.py \
+--name VCTK_G0A4L0A2_8h4h_16ngf_mrD_arcsinh_resconv_interp \
+--dataroot /home/neoncloud/VCTK-Corpus/train.csv --batchSize 60 --validation_split 0.01 \
+--label_nc 0 --output_nc 1 --input_nc 1 --gpu_id 0 --fp16 --nThreads 4 \
+--no_instance --no_vgg_loss --center --arcsinh_transform \
+--abs_spectro --arcsinh_gain 800 --norm_range -1 1 --smooth 0.5 \
+--netG local --n_blocks_global 0 --n_blocks_local 0 --ngf 16 \
+--n_blocks_attn_g 4 --dim_head_g 128 --heads_g 4 --proj_factor_g 4 \
+--n_blocks_attn_l 4 --dim_head_l 64 --heads_l 8 --proj_factor_g 4 \
+--fit_residual --upsample_type interpolate --downsample_type resconv \
+--use_multires_D --lambda_mr 0.4 --num_D 3 --ndf 64 \
+--niter 70 --niter_decay 30 \
+--eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 3 --print_freq 240
+
+python train.py \
+--name VCTK_G0A4L2_8h_16ngf_mrD_arcsinh_resconv_interp \
+--dataroot /home/neoncloud/audio-super-res/data/vctk/VCTK-Corpus/train.csv --batchSize 96 --validation_split 0.01 \
+--label_nc 0 --output_nc 1 --input_nc 1 --gpu_id 0 --fp16 --nThreads 4 \
+--no_instance --no_vgg_loss --center --arcsinh_transform \
+--abs_spectro --arcsinh_gain 800 --norm_range -1 1 --smooth 0.5 \
+--netG local --n_blocks_global 0 --n_blocks_local 2 --ngf 16 \
+--n_blocks_attn_g 4 --dim_head_g 64 --heads_g 8 --proj_factor_g 4 \
+--fit_residual --upsample_type interpolate --downsample_type resconv \
+--use_multires_D --lambda_mr 0.4 --num_D 3 --ndf 64 \
+--niter 70 --niter_decay 30 \
+--eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 3 --print_freq 768
+
+python generate_audio.py \
+--name gen_hifitts_G4A3L3_6h_56ngf_arcsinh_resconv_interp \
+--load_pretrain ./checkpoints/hifitts_G4A3L3_6h_56ngf_arcsinh_resconv_interp \
+--dataroot /home/neoncloud/VCTK-Corpus/wav48/p225/p225_003.wav --batchSize 2 \
+--validation_split 0.00 --label_nc 0 --output_nc 1 --input_nc 2 \
+--gpu_id 0 --fp16 --nThreads 4 \
+--no_instance --no_vgg_loss --center --arcsinh_transform --add_noise --snr 55 \
+--abs_spectro --arcsinh_gain 500 --norm_range -1 1 --smooth 0.0 --netG local \
+--n_downsample_global 3 --n_blocks_global 4 --n_blocks_local 3 --ngf 56 \
+--n_blocks_attn_g 3 --dim_head_g 128 --heads_g 6 --proj_factor_g 4 \
+--n_blocks_attn_l 0 --fit_residual --upsample_type interpolate --downsample_type resconv --phase test
+
+#vctk_hifitts_G4A3L3_56ngf_6x
+python generate_audio.py \
+--name gen_vctk_hifitts_G4A3L3_56ngf_6x \
+--load_pretrain ./checkpoints/vctk_hifitts_G4A3L3_56ngf_6x \
+--dataroot /home/neoncloud/VCTK-Corpus/wav48/p225/p225_003.wav --batchSize 2 \
+--validation_split 0.00 --label_nc 0 --output_nc 1 --input_nc 2 \
+--gpu_id 0 --fp16 --nThreads 4 \
+--no_instance --no_vgg_loss --center --arcsinh_transform --add_noise --snr 55 \
+--abs_spectro --arcsinh_gain 500 --norm_range -1 1 --smooth 0.0 --netG local \
+--n_downsample_global 3 --n_blocks_global 4 --n_blocks_local 3 --ngf 56 \
+--n_blocks_attn_g 3 --dim_head_g 128 --heads_g 6 --proj_factor_g 4 \
+--n_blocks_attn_l 0 --fit_residual --upsample_type interpolate --downsample_type resconv --phase test
+
+#vctk_hifitts_G4A3L3_56ngf_6x
+python generate_audio.py \
+--name gen_vctk_hifitts_G4A3L3_56ngf_3x \
+--load_pretrain ./checkpoints/vctk_hifitts_G4A3L3_56ngf_3x \
+--dataroot /home/neoncloud/VCTK-Corpus/wav48/p225/p225_003.wav --batchSize 2 \
+--validation_split 0.00 --label_nc 0 --output_nc 1 --input_nc 2 \
+--gpu_id 0 --fp16 --nThreads 4 \
+--no_instance --no_vgg_loss --center --arcsinh_transform --add_noise --snr 55 \
+--abs_spectro --arcsinh_gain 500 --norm_range -1 1 --smooth 0.0 --netG local \
+--n_downsample_global 3 --n_blocks_global 4 --n_blocks_local 3 --ngf 56 \
+--n_blocks_attn_g 3 --dim_head_g 128 --heads_g 6 --proj_factor_g 4 \
+--n_blocks_attn_l 0 --fit_residual --upsample_type interpolate --downsample_type resconv --phase test --lr_sampling_rate 16000
+
+python train.py \
+--name vctk_hifitts_G4A3L3_56ngf_6x_4 \
+--load_pretrain ./checkpoints/vctk_hifitts_G4A3L3_56ngf_6x_3 \
+--dataroot ~/VCTK-Corpus/train.csv --batchSize 32 \
+--validation_split 0.01 --label_nc 0 --output_nc 1 --input_nc 2 \
+--gpu_id 0 --fp16 --nThreads 4 \
+--no_instance --no_vgg_loss --center \
+--arcsinh_transform --add_noise --snr 60 \
+--abs_spectro --arcsinh_gain 1000 \
+--norm_range -1 1 --smooth 0.0 --abs_norm --src_range -5 5 \
+--netG local --ngf 56 \
+--n_downsample_global 3 --n_blocks_global 4 \
+--n_blocks_attn_g 3 --dim_head_g 128 --heads_g 6 --proj_factor_g 4 \
+--n_blocks_attn_l 0 --n_blocks_local 3 \
+--fit_residual --upsample_type interpolate --downsample_type resconv \
+--niter 50 --niter_decay 50 \
+--use_multires_D --lambda_mr 0.6 \
+--eval_freq 16000 --save_latest_freq 16000 --save_epoch_freq 4

@@ -54,10 +54,10 @@ class CustomDatasetDataLoader(BaseDataLoader):
                 self.eval_data_lenth = len(self.val_indices)
                 self.eval_dataloder = torch.utils.data.DataLoader(
                     self.dataset,
-                    batch_size=opt.batchSize,
+                    batch_size=4,
                     sampler=valid_sampler,
-                    num_workers=int(opt.nThreads),
-                    pin_memory=True)
+                    num_workers=1,
+                    pin_memory=False)
             else:
                 self.eval_dataloder = None
                 self.eval_data_lenth = 0

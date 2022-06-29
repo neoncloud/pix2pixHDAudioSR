@@ -1,12 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
+plt.switch_backend('agg')
 def fig2img(fig):
     """Convert a Matplotlib figure to a PIL Image and return it"""
     fig.canvas.draw()
     return np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8).reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
 def compute_visuals(sp=None, pha=None, abs=False):
+    sp = sp.transpose() if sp is not None else None
+    pha = pha.transpose() if pha is not None else None
     sp_spectro = None
     sp_hist = None
     if sp is not None:

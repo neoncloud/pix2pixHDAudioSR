@@ -62,19 +62,19 @@ class AudioDataset(BaseDataset):
                     break
                 except:
                     i += 1
-        if self.add_noise:
-            noise = torch.randn(waveform.size())
-            noise = noise-noise.mean()
-            signal_power = torch.sum(waveform**2)/self.segment_length
-            noise_var = signal_power / 10**(self.snr/10)
-            noise = torch.sqrt(noise_var)/noise.std()*noise
-            waveform = waveform + noise
         hr_waveform = aF.resample(
             waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.hr_sampling_rate)
         lr_waveform = aF.resample(
             waveform=waveform, orig_freq=orig_sample_rate, new_freq=self.lr_sampling_rate)
         lr_waveform = aF.resample(
             waveform=lr_waveform, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
+        if self.add_noise:
+            noise = torch.randn(lr_waveform.size())
+            noise = noise-noise.mean()
+            signal_power = torch.sum(lr_waveform**2)/self.segment_length
+            noise_var = signal_power / 10**(self.snr/10)
+            noise = torch.sqrt(noise_var)/noise.std()*noise
+            lr_waveform = lr_waveform + noise
         # lr_waveform = aF.lowpass_biquad(waveform, sample_rate=self.hr_sampling_rate, cutoff_freq = self.lr_sampling_rate//2) #Meet the Nyquest sampling theorem
         hr = self.seg_pad_audio(hr_waveform)
         lr = self.seg_pad_audio(lr_waveform)
@@ -121,6 +121,8 @@ class AudioTestDataset(BaseDataset):
         self.center = opt.center
         self.dataroot = opt.dataroot
         self.overlap = opt.gen_overlap
+        self.add_noise = opt.add_noise
+        self.snr = opt.snr
         try:
             self.raw_audio, self.in_sampling_rate = torchaudio.load(
                 self.dataroot)
@@ -138,6 +140,13 @@ class AudioTestDataset(BaseDataset):
                 waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.lr_sampling_rate)
             self.lr_audio = aF.resample(
                 waveform=self.lr_audio, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
+        if self.add_noise:
+            noise = torch.randn(self.lr_audio.size())
+            noise = noise-noise.mean()
+            signal_power = torch.sum(self.lr_audio**2)/self.segment_length
+            noise_var = signal_power / 10**(self.snr/10)
+            noise = torch.sqrt(noise_var)/noise.std()*noise
+            self.lr_audio = self.lr_audio + noise
         self.seg_audio = self.seg_pad_audio(self.lr_audio)
 
     def __len__(self):

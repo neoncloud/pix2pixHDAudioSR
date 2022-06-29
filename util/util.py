@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import os
 import torchaudio.functional as aF
+from torch.nn.functional import conv1d
 #import pysepm
 
 # Converts a Tensor into a Numpy array
@@ -190,3 +191,10 @@ def kbdwin(N:int, beta:float=12.0, device='cpu')->torch.Tensor:
     w_sum = w.sum()
     wdw_half = torch.sqrt(torch.cumsum(w,dim=0)/w_sum)[:-1]
     return torch.cat((wdw_half,wdw_half.flip(dims=(0,))),dim=0)
+
+def alignment(x,y,win_len=128):
+    x_max_idx = torch.argmax(x)
+    x_sample = x[...,int(x_max_idx-win_len//2):int(x_max_idx+win_len//2)]
+    corr = conv1d(y,x_sample,dilation=0)
+
+

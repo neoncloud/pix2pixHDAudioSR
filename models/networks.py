@@ -13,7 +13,7 @@ from torch.nn.functional import interpolate, pad
 
 def weights_init(m):
     classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
+    if classname.find('Conv2d') != -1:
         m.weight.data.normal_(0.0, 0.02)
     elif classname.find('BatchNorm2d') != -1:
         m.weight.data.normal_(1.0, 0.02)
@@ -32,14 +32,18 @@ def get_norm_layer(norm_type='instance'):
 
 
 def define_G(input_nc, output_nc, ngf, netG, n_downsample_global=3, n_blocks_global=9, n_local_enhancers=1,
-             n_blocks_local=3, norm='instance', gpu_ids=[], upsample_type='transconv', n_attn_g=0, n_attn_l=0):
+             n_blocks_local=3, norm='instance', gpu_ids=[], upsample_type='transconv', downsample_type='conv', input_size=(128, 256), n_attn_g=0, n_attn_l=0, proj_factor_g=4, heads_g=4, dim_head_g=128, proj_factor_l=4, heads_l=4, dim_head_l=128):
     norm_layer = get_norm_layer(norm_type=norm)
     if netG == 'global':
         netG = GlobalGenerator(input_nc, output_nc, ngf, n_downsample_global,
-                               n_blocks_global, norm_layer, upsample_type=upsample_type, n_attn_g=n_attn_g)
+                               n_blocks_global, norm_layer, downsample_type=downsample_type, upsample_type=upsample_type,
+                               input_size=input_size,
+                               n_attn_g=n_attn_g, proj_factor_g=proj_factor_g, heads_g=heads_g, dim_head_g=dim_head_g)
     elif netG == 'local':
         netG = LocalEnhancer(input_nc, output_nc, ngf, n_downsample_global, n_blocks_global,
-                             n_local_enhancers, n_blocks_local, norm_layer, upsample_type=upsample_type, n_attn_g=n_attn_g, n_attn_l=n_attn_l)
+                             n_local_enhancers, n_blocks_local, norm_layer, downsample_type=downsample_type, upsample_type=upsample_type,
+                             input_size=input_size,
+                             n_attn_g=n_attn_g, proj_factor_g=proj_factor_g, heads_g=heads_g, dim_head_g=dim_head_g, n_attn_l=n_attn_l, proj_factor_l=proj_factor_l, heads_l=heads_l, dim_head_l=dim_head_l)
     elif netG == 'encoder':
         netG = Encoder(input_nc, output_nc, ngf,
                        n_downsample_global, norm_layer)
@@ -173,26 +177,43 @@ class SpecLoss(nn.Module):
 
 class LocalEnhancer(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=32, n_downsample_global=3, n_blocks_global=9,
-                 n_local_enhancers=1, n_blocks_local=3, norm_layer=nn.BatchNorm2d, padding_type='reflect', upsample_type='transconv', n_attn_g=0, n_attn_l=0):
+                 n_local_enhancers=1, n_blocks_local=3, norm_layer=nn.BatchNorm2d, padding_type='reflect', downsample_type='conv', upsample_type='transconv', n_attn_g=0, n_attn_l=0, input_size=(128, 256), proj_factor_g=4, heads_g=4, dim_head_g=128, proj_factor_l=4, heads_l=4, dim_head_l=128):
         super(LocalEnhancer, self).__init__()
         self.n_local_enhancers = n_local_enhancers
 
         ###### global generator model #####
         ngf_global = ngf * (2**n_local_enhancers)
-        model_global = GlobalGenerator(input_nc, output_nc, ngf_global, n_downsample_global,
-                                       n_blocks_global, norm_layer, upsample_type=upsample_type, n_attn_g=n_attn_g).model
+        model_global = GlobalGenerator(input_nc, output_nc, ngf_global, n_downsample_global, n_blocks_global, norm_layer,
+                                       downsample_type=downsample_type, upsample_type=upsample_type,
+                                       input_size=tuple(map(lambda x: x//2, input_size)), n_attn_g=n_attn_g, proj_factor_g=proj_factor_g, heads_g=heads_g, dim_head_g=dim_head_g).model
         # get rid of final convolution layers
         model_global = [model_global[i] for i in range(len(model_global)-3)]
         self.model = nn.Sequential(*model_global)
 
+        # downsample
+        if downsample_type == 'conv':
+            downsample_layer = nn.Conv2d
+        elif downsample_type == 'resconv':
+            downsample_layer = ConvResBlock
+        else:
+            raise NotImplementedError(
+                'downsample layer [{:s}] is not found'.format(downsample_type))
+        # upsample
+        if upsample_type == 'transconv':
+            upsample_layer = nn.ConvTranspose2d
+        elif upsample_type == 'interpolate':
+            upsample_layer = InterpolateUpsample
+        else:
+            raise NotImplementedError(
+                'upsample layer [{:s}] is not found'.format(upsample_type))
         ###### local enhancer layers #####
         for n in range(1, n_local_enhancers+1):
             # downsample
             ngf_global = ngf * (2**(n_local_enhancers-n))
             model_downsample = [nn.ReflectionPad2d(3), nn.Conv2d(input_nc, ngf_global, kernel_size=7, padding=0),
                                 norm_layer(ngf_global), nn.ReLU(True),
-                                nn.Conv2d(ngf_global, ngf_global * 2,
-                                          kernel_size=3, stride=2, padding=1),
+                                downsample_layer(ngf_global, ngf_global * 2,
+                                                 kernel_size=3, stride=2, padding=1),
                                 norm_layer(ngf_global * 2), nn.ReLU(True)]
             # residual blocks
             model_upsample = []
@@ -202,18 +223,26 @@ class LocalEnhancer(nn.Module):
             # attention bottleneck
             if n_attn_l > 0:
                 middle = n_blocks_local//2
-                for i in range(n_attn_l):
-                    model_upsample.insert(middle, AttentionResBlock(ngf_global * 2))
+                # 8x downsample
+                down = [downsample_layer(ngf_global * 2, ngf_global,
+                                         kernel_size=3, stride=2, padding=1),
+                        norm_layer(ngf_global), nn.ReLU(True)]
+                down += [downsample_layer(ngf_global, ngf_global,
+                                          kernel_size=3, stride=2, padding=1),
+                         norm_layer(ngf_global), nn.ReLU(True)]*2
+                down = nn.Sequential(*down)
+                model_upsample.insert(middle, down)
 
-            # upsample
-            if upsample_type == 'transconv':
-                upsample_layer = nn.ConvTranspose2d
-            elif upsample_type == 'interpolate':
-                upsample_layer = InterpolateUpsample
-            else:
-                raise NotImplementedError(
-                    'upsample layer [{:s}] is not found'.format(upsample_type))
-            model_upsample += [upsample_layer(in_channels=ngf_global * 2, out_channels=ngf_global, kernel_size=3, stride=2, padding=1, output_padding=1),
+                middle += 1
+                input_size = tuple(map(lambda x: x//16, input_size))
+                from bottleneck_transformer_pytorch import BottleStack
+                attn_block = BottleStack(dim=ngf_global, fmap_size=input_size, dim_out=ngf_global*2, num_layers=n_attn_l, proj_factor=proj_factor_l,
+                                         downsample=False, heads=heads_l, dim_head=dim_head_l, activation=nn.ReLU(True), rel_pos_emb=False)
+                model_upsample.insert(middle, attn_block)
+                model_upsample += [upsample_layer(in_channels=ngf_global*2, out_channels=ngf_global*2, kernel_size=3, stride=2, padding=1, output_padding=1),
+                                   norm_layer(ngf_global), nn.ReLU(True)]*3
+
+            model_upsample += [upsample_layer(in_channels=ngf_global*2, out_channels=ngf_global, kernel_size=3, stride=2, padding=1, output_padding=1),
                                norm_layer(ngf_global), nn.ReLU(True)]
 
             # final convolution
@@ -227,6 +256,7 @@ class LocalEnhancer(nn.Module):
 
         self.downsample = nn.AvgPool2d(
             3, stride=2, padding=[1, 1], count_include_pad=False)
+        self.freeze = False
 
     def forward(self, input):
         # create input pyramid
@@ -243,14 +273,36 @@ class LocalEnhancer(nn.Module):
             model_upsample = getattr(self, 'model'+str(n_local_enhancers)+'_2')
             input_i = input_downsampled[self.n_local_enhancers -
                                         n_local_enhancers]
-            output_prev = model_upsample(
-                model_downsample(input_i) + output_prev)
+            if self.freeze:
+                with torch.no_grad():
+                    output_downsample = model_downsample(input_i)
+                output_prev = model_upsample(
+                    output_downsample + output_prev)
+            else:
+                output_prev = model_upsample(
+                    model_downsample(input_i) + output_prev)
         return output_prev
+
+    def set_freeze(self, freeze=True):
+        if self.freeze == freeze:
+            return
+        else:
+            self.freeze = freeze
+        print("The following layers will be freezed:")
+        '''Freeze downsample layers'''
+        from bottleneck_transformer_pytorch import BottleStack
+        for name, layer in self.model.named_modules():
+            if isinstance(layer, BottleStack):
+                break
+            print(name)
+            for param in layer.parameters():
+                param.requires_grad = not freeze
+        print(", and downsample layers in Local Generator")
 
 
 class GlobalGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=64, n_downsampling=3, n_blocks=9, norm_layer=nn.BatchNorm2d,
-                 padding_type='reflect', upsample_type='transconv', n_attn_g=0):
+                 padding_type='reflect', upsample_type='transconv', downsample_type='conv', n_attn_g=0, input_size=(128, 256), proj_factor_g=4, heads_g=4, dim_head_g=128):
         assert(n_blocks >= 0)
         super(GlobalGenerator, self).__init__()
         activation = nn.ReLU(True)
@@ -258,9 +310,25 @@ class GlobalGenerator(nn.Module):
         model = [nn.ReflectionPad2d(3), nn.Conv2d(
             input_nc, ngf, kernel_size=7, padding=0), norm_layer(ngf), activation]
         # downsample
+        if downsample_type == 'conv':
+            downsample_layer = nn.Conv2d
+        elif downsample_type == 'resconv':
+            downsample_layer = ConvResBlock
+        else:
+            raise NotImplementedError(
+                'downsample layer [{:s}] is not found'.format(downsample_type))
+        # upsample
+        if upsample_type == 'transconv':
+            upsample_layer = nn.ConvTranspose2d
+        elif upsample_type == 'interpolate':
+            upsample_layer = InterpolateUpsample
+        else:
+            raise NotImplementedError(
+                'upsample layer [{:s}] is not found'.format(upsample_type))
+
         for i in range(n_downsampling):
             mult = 2**i
-            model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1),
+            model += [downsample_layer(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1),
                       norm_layer(ngf * mult * 2), activation]
 
         # resnet blocks
@@ -271,18 +339,13 @@ class GlobalGenerator(nn.Module):
                                         activation=activation, norm_layer=norm_layer)]
         if n_attn_g > 0:
             middle = n_blocks//2
-            for i in range(n_attn_g):
-                bottle_neck.insert(middle, AttentionResBlock(ngf * mult))
+            input_size = tuple(map(lambda x: x//mult, input_size))
+            from bottleneck_transformer_pytorch import BottleStack
+            attn_block = BottleStack(dim=ngf * mult, fmap_size=input_size, dim_out=ngf * mult, num_layers=n_attn_g, proj_factor=proj_factor_g,
+                                     downsample=False, heads=heads_g, dim_head=dim_head_g, activation=activation, rel_pos_emb=False)
+            bottle_neck.insert(middle, attn_block)
         model += bottle_neck
 
-        # upsample
-        if upsample_type == 'transconv':
-            upsample_layer = nn.ConvTranspose2d
-        elif upsample_type == 'interpolate':
-            upsample_layer = InterpolateUpsample
-        else:
-            raise NotImplementedError(
-                'upsample layer [{:s}] is not found'.format(upsample_type))
         for i in range(n_downsampling):
             mult = 2**(n_downsampling - i)
             model += [upsample_layer(in_channels=ngf * mult, out_channels=int(ngf * mult / 2), kernel_size=3, stride=2, padding=1, output_padding=1),
@@ -290,9 +353,25 @@ class GlobalGenerator(nn.Module):
         model += [nn.ReflectionPad2d(3), nn.Conv2d(ngf,
                                                    output_nc, kernel_size=7, padding=0), nn.Tanh()]
         self.model = nn.Sequential(*model)
+        self.freeze = False
 
     def forward(self, input):
         return self.model(input)
+
+    def set_freeze(self, freeze=True):
+        if self.freeze == freeze:
+            return
+        else:
+            self.freeze = freeze
+        print("The following layers will be freezed:")
+        '''Freeze downsample layers'''
+        from bottleneck_transformer_pytorch import BottleStack
+        for name, layer in self.model.named_modules():
+            if isinstance(layer, BottleStack):
+                break
+            print(name)
+            for param in layer.parameters():
+                param.requires_grad = not freeze
 
 
 class InterpolateUpsample(nn.Module):
@@ -311,14 +390,33 @@ class InterpolateUpsample(nn.Module):
             self.in_channels, self.out_channels, 5, padding=1)
         self.conv2 = nn.Conv2d(
             self.out_channels, self.out_channels, 3, padding=2)
+        self.conv_res = nn.Conv2d(
+            self.in_channels, self.out_channels, 3, padding=1)
 
     def forward(self, x):
         assert x.shape[1] == self.in_channels
         x = interpolate(x, scale_factor=2, mode="nearest")
+        res_x = self.conv_res(x)
         x = self.conv1(x)
         x = self.conv2(x)
-        return x
+        return x+res_x
 
+
+class ConvResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
+        super(ConvResBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, in_channels,
+                               kernel_size, stride, padding)
+        self.conv2 = nn.Conv2d(
+            in_channels, out_channels, 5, padding=2)
+        self.conv_res = nn.Conv2d(
+            in_channels, out_channels, kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        res_x = self.conv_res(x)
+        x = self.conv2(x)
+        return x+res_x
 # Define a resnet block
 
 
@@ -364,33 +462,6 @@ class ResnetBlock(nn.Module):
 
     def forward(self, x):
         out = x + self.conv_block(x)
-        return out
-
-
-class AttentionResBlock(nn.Module):
-    def __init__(self, in_dim):
-        super(AttentionResBlock, self).__init__()
-        # Input: CxHxW Output: C//8xHxW
-        self.query_conv = nn.Conv2d(
-            in_channels=in_dim, out_channels=in_dim//8, kernel_size=1)
-        # Input: CxHxW Output: C//8xHxW
-        self.key_conv = nn.Conv2d(
-            in_channels=in_dim, out_channels=in_dim//8, kernel_size=1)
-        # Input: CxHxW Output: CxHxW
-        self.value_conv = nn.Conv2d(
-            in_channels=in_dim, out_channels=in_dim, kernel_size=1)
-        self.softmax = nn.Softmax(dim=-1)
-
-    def forward(self, x):
-        n, c, h, w = x.shape
-        proj_query = self.query_conv(x).view(n, -1, h*w).permute(0, 2, 1)
-        proj_key = self.key_conv(x).view(n, -1, h*w)
-        energy = torch.bmm(proj_query, proj_key)
-        attention = self.softmax(energy)
-        proj_value = self.value_conv(x).view(n, -1, h*w)
-        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
-        out = out.view(n, c, h, w)
-        out = out + x
         return out
 
 
@@ -556,8 +627,8 @@ class MultiResolutionDiscriminator(nn.Module):
                 spectro = torch.cat(
                     (spectro, spectro[:, 1, :, :].abs().unsqueeze(1)), dim=1)
             if callable(self.normalizer):
-                spectro = self.normalizer(spectro)[0]
                 # [0] avoids multiple return values
+                spectro = self.normalizer(spectro)[0]
             if self.getIntermFeat:
                 model = [getattr(self, 'scale'+str(self.num_D-1-i)+'_layer'+str(j))
                          for j in range(self.n_layers+2)]

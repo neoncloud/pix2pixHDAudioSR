@@ -9,6 +9,7 @@ import math
 import os
 import time
 import csv
+import gc
 
 import numpy as np
 import torch
@@ -225,8 +226,12 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
             np.savetxt(iter_path, (epoch, epoch_iter), delimiter=',', fmt='%d')
 
         if total_steps % opt.eval_freq == eval_delta:
+            del losses, loss_D, loss_G, loss_dict
+            torch.cuda.empty_cache()
+            gc.collect()
             eval_model()
             torch.cuda.empty_cache()
+            gc.collect()
         if total_steps % opt.loss_update_freq == loss_update_delta:
             if opt.use_match_loss:
                 model.update_match_loss_scaler()
