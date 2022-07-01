@@ -483,7 +483,7 @@ class MDCT4(nn.Module):
         self.exp1 = torch.exp(-1j*torch.pi/self.n_fft*torch.arange(start=0, end=self.n_fft,step=1, dtype=torch.float64)).to(self.device)
         self.exp2 = torch.exp(-1j*(torch.pi/(2*self.n_fft)+torch.pi/4)*torch.arange(start=1, end=self.n_fft, step=2, dtype=torch.float64)).to(self.device)
 
-    def forward(self, signal, return_frames=False):
+    def forward(self, signal, return_frames:bool=False):
         # Pad the signal to a proper length
         signal_len = int(len(signal))
         start_pad = 0
@@ -503,6 +503,8 @@ class MDCT4(nn.Module):
         signal = torch.mul(signal.to(self.device), self.window.to(self.device))
         if return_frames:
             frames = signal.clone()
+        else:
+            frames = torch.empty(1)
 
         # Pad zeros for DCT
         if self.n_fft > self.win_length:
@@ -512,7 +514,7 @@ class MDCT4(nn.Module):
         signal = torch.fft.fft(signal)[...,:self.n_fft//2]
         signal = torch.real(self.exp2*signal)
 
-        return (signal, frames) if return_frames else signal
+        return signal, frames
 
 
 class IMDCT4(nn.Module):
@@ -541,7 +543,7 @@ class IMDCT4(nn.Module):
         self.exp1 = torch.exp(-1j*(torch.pi/(2*self.n_fft)+torch.pi/4)*torch.arange(start=1, end=self.n_fft, step=2, dtype=torch.float64)).to(self.device)
         self.exp2 = torch.exp(-1j*torch.pi/(2*self.n_fft)*torch.arange(start=0, end=2*self.n_fft,step=2, dtype=torch.float64)).to(self.device)
 
-    def forward(self, signal, return_frames=False):
+    def forward(self, signal, return_frames:bool=False):
         assert signal.dim() == 3, 'Only tensors shaped in BHW are supported, got tensor of shape %s'%(str(signal.size()))
         assert signal.size()[-1] == self.n_fft//2, 'The last dim of input tensor should match the n_fft. Expected %d ,got %d'%(self.n_fft, signal.size()[-1])
 
@@ -558,6 +560,8 @@ class IMDCT4(nn.Module):
         signal = torch.mul(signal, self.window)
         if return_frames:
             frames = signal.clone()
+        else:
+            frames = torch.zeros(1)
 
         # Overlapping adding by fold()
         out_len = (signal.size()[-2]-1) * self.hop_length + self.win_length
@@ -567,4 +571,4 @@ class IMDCT4(nn.Module):
             # extract the middle part
             signal = signal[..., self.win_length//2:-self.win_length//2]
         signal = signal if self.out_length is None else signal[...,:self.out_length]
-        return (signal, frames) if return_frames else signal
+        return signal, frames

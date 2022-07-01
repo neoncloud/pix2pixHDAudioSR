@@ -109,12 +109,10 @@ def eval_model():
     lsd = []
     for j, eval_data in enumerate(eval_dataset):
         model.eval()
-        lr_audio = eval_data['label']
-        hr_audio = eval_data['image']
+        lr_audio = eval_data['LR_audio']
+        hr_audio = eval_data['HR_audio']
         with torch.no_grad():
-            sr_spectro, lr_pha, norm_param, lr_spectro = model.inference(
-                lr_audio, None)
-            sr_audio = model.to_audio(sr_spectro, norm_param, lr_pha)
+            sr_spectro, sr_audio, lr_pha, lr_norm_param, lr_spectro = model.inference(lr_audio)
             _mse, _snr_sr, _snr_lr, _ssnr_sr, _ssnr_lr, _pesq, _lsd = compute_matrics(
                 hr_audio.squeeze(), lr_audio.squeeze(), sr_audio.squeeze(), opt)
             err.append(_mse)
@@ -162,11 +160,9 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         ############## Forward Pass ######################
         if opt.fp16:
             with autocast():
-                losses, generated = model(Variable(data['label']), Variable(
-                    data['inst']), Variable(data['image']), Variable(data['feat']), infer=save_fake)
+                losses, generated = model._forward(Variable(data['LR_audio']), Variable(data['HR_audio']), infer=save_fake)
         else:
-            losses, generated = model(Variable(data['label']), Variable(
-                data['inst']), Variable(data['image']), Variable(data['feat']), infer=save_fake)
+            losses, generated = model._forward(Variable(data['LR_audio']), Variable(data['HR_audio']), infer=save_fake)
 
         # Sum per device losses
         losses = [torch.mean(x) if not isinstance(x, int)

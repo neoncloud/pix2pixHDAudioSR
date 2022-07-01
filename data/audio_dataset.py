@@ -78,7 +78,7 @@ class AudioDataset(BaseDataset):
         # lr_waveform = aF.lowpass_biquad(waveform, sample_rate=self.hr_sampling_rate, cutoff_freq = self.lr_sampling_rate//2) #Meet the Nyquest sampling theorem
         hr = self.seg_pad_audio(hr_waveform)
         lr = self.seg_pad_audio(lr_waveform)
-        return {'image': hr.squeeze(0), 'label': lr.squeeze(0), 'inst': torch.empty(1), 'feat': torch.empty(1)}
+        return {'HR_audio': hr.squeeze(0), 'LR_audio': lr.squeeze(0)}
 
     def get_files(self, file_path):
         if os.path.isdir(file_path):

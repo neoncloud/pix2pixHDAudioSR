@@ -10,7 +10,7 @@ class BaseModel(torch.nn.Module):
         self.opt = opt
         self.gpu_ids = opt.gpu_ids
         self.isTrain = opt.isTrain
-        self.Tensor = torch.cuda.FloatTensor if self.gpu_ids else torch.Tensor
+        #self.Tensor = torch.cuda.FloatTensor if self.gpu_ids else torch.Tensor
         self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)
         self.device = 'cuda' if len(self.gpu_ids) > 0 else 'cpu'
 
