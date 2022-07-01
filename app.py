@@ -3,10 +3,8 @@ import torch
 import torchaudio
 import matplotlib.pyplot as plt
 from os.path import splitext
-from os import remove
 from io import BytesIO
-from data.data_loader import CreateDataLoader
-from datetime import datetime
+
 st.title('Audio Upload')
 uploaded_audio = st.file_uploader("Please upload a audio file", ['wav', 'mp3', 'flac', 'ogg'], False)
 if uploaded_audio is not None:
@@ -59,7 +57,6 @@ if uploaded_audio is not None:
         data_loader = load_data()
     st.success('Load data done!')
     
-    @st.cache(allow_output_mutation=True)
     def inference():
         sr_audios = []
         with torch.no_grad():

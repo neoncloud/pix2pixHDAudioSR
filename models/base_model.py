@@ -69,10 +69,31 @@ class BaseModel(torch.nn.Module):
                     if self.opt.verbose:
                         print('Pretrained network %s has excessive layers; Only loading layers that are used' % network_label)
                 except:
-                    print('Pretrained network %s has fewer layers; The following are not initialized:' % network_label)
-                    for k, v in pretrained_dict.items():
-                        if v.size() == model_dict[k].size():
-                            model_dict[k] = v
+                    print('Pretrained network %s has fewer layers; The following layers are initialized:' % network_label)
+                    pretrained_dict = torch.load(save_path)
+                    module_map = self.opt.param_key_map
+                    for name, param in pretrained_dict.items():
+                        if name not in model_dict:
+                            print('No match %s. Try to find mapping...'%name)
+                            layer_name = name.split('.')
+                            if layer_name[1] in module_map:
+                                layer_name[1] = module_map[layer_name[1]]
+                                name_ = "."
+                                name_ = name_.join(layer_name)
+                                print(name,'->',name_)
+                                name = name_
+                            else: continue
+                        if isinstance(param, torch.nn.Parameter):
+                            # backwards compatibility for serialized parameters
+                            param = param.data
+                        try:
+                            model_dict[name].copy_(param)
+                        except:
+                            print('Not match!')
+                    # for k, v in pretrained_dict.items():
+                    #     if v.size() == model_dict[k].size():
+                    #         print('Layer %s initialized'%k)
+                    #         model_dict[k] = v
 
                     if sys.version_info >= (3,0):
                         not_initialized = set()

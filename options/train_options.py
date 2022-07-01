@@ -19,6 +19,7 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--continue_train', action='store_true', help='continue training: load the latest model')
         self.parser.add_argument('--freeze', action='store_true', help='freeze downsample in G')
         self.parser.add_argument('--load_pretrain', type=str, default='', help='load the pretrained model from the specified location')
+        self.parser.add_argument('--param_key_map', type=lambda x: {str(k):str(v) for k,v in (i.split(':') for i in x.split(','))}, default={}, help='if the pretrained model do not match the current model, this is helpful to map the pretrained modules to current model.')
         self.parser.add_argument('--which_epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
         self.parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
         self.parser.add_argument('--niter', type=int, default=100, help='# of iter at starting learning rate')
