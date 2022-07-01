@@ -120,34 +120,13 @@ class AudioTestDataset(BaseDataset):
         self.win_length = opt.win_length
         self.center = opt.center
         self.dataroot = opt.dataroot
+        self.is_lr_input = opt.is_lr_input
         self.overlap = opt.gen_overlap
         self.add_noise = opt.add_noise
         self.snr = opt.snr
-        try:
-            self.raw_audio, self.in_sampling_rate = torchaudio.load(
-                self.dataroot)
-            self.audio_len = self.raw_audio.size(-1)
-            print("Audio length:", self.audio_len)
-        except:
-            self.raw_audio = []
-            print("load audio failed")
-            exit(0)
-        if opt.is_lr_input:
-            self.lr_audio = aF.resample(
-                waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.hr_sampling_rate)
-        else:
-            self.lr_audio = aF.resample(
-                waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.lr_sampling_rate)
-            self.lr_audio = aF.resample(
-                waveform=self.lr_audio, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
-        if self.add_noise:
-            noise = torch.randn(self.lr_audio.size())
-            noise = noise-noise.mean()
-            signal_power = torch.sum(self.lr_audio**2)/self.segment_length
-            noise_var = signal_power / 10**(self.snr/10)
-            noise = torch.sqrt(noise_var)/noise.std()*noise
-            self.lr_audio = self.lr_audio + noise
-        self.seg_audio = self.seg_pad_audio(self.lr_audio)
+        
+        self.read_audio()
+        self.post_processing()
 
     def __len__(self):
         return self.seg_audio.size(0)
@@ -157,6 +136,17 @@ class AudioTestDataset(BaseDataset):
 
     def __getitem__(self, idx):
         return {'image': torch.empty(1), 'label': self.seg_audio[idx, :].squeeze(0), 'inst': torch.empty(1), 'feat': torch.empty(1), 'path': self.dataroot}
+
+    def read_audio(self):
+        try:
+            self.raw_audio, self.in_sampling_rate = torchaudio.load(
+                self.dataroot)
+            self.audio_len = self.raw_audio.size(-1)
+            print("Audio length:", self.audio_len)
+        except:
+            self.raw_audio = []
+            print("load audio failed")
+            exit(0)
 
     def seg_pad_audio(self, audio):
         audio = audio.squeeze(0)
@@ -173,3 +163,41 @@ class AudioTestDataset(BaseDataset):
             audio = audio.unsqueeze(0)
 
         return audio
+
+    def post_processing(self):
+        if self.is_lr_input:
+            self.lr_audio = aF.resample(
+                waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.hr_sampling_rate)
+        else:
+            self.lr_audio = aF.resample(
+                waveform=self.raw_audio, orig_freq=self.in_sampling_rate, new_freq=self.lr_sampling_rate)
+            self.lr_audio = aF.resample(
+                waveform=self.lr_audio, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
+        if self.add_noise:
+            noise = torch.randn(self.lr_audio.size())
+            noise = noise-noise.mean()
+            signal_power = torch.sum(self.lr_audio**2)/self.segment_length
+            noise_var = signal_power / 10**(self.snr/10)
+            noise = torch.sqrt(noise_var)/noise.std()*noise
+            self.lr_audio = self.lr_audio + noise
+        self.seg_audio = self.seg_pad_audio(self.lr_audio)
+
+class AudioAppDataset(AudioTestDataset):
+    def __init__(self, opt, audio:torch.Tensor, fs) -> None:
+        self.lr_sampling_rate = opt.lr_sampling_rate
+        self.hr_sampling_rate = opt.hr_sampling_rate
+        self.segment_length = opt.segment_length
+        self.n_fft = opt.n_fft
+        self.hop_length = opt.hop_length
+        self.win_length = opt.win_length
+        self.center = opt.center
+        self.dataroot = audio
+        self.is_lr_input = opt.is_lr_input
+        self.overlap = opt.gen_overlap
+        self.add_noise = opt.add_noise
+        self.snr = opt.snr
+        self.raw_audio = audio
+        self.in_sampling_rate = fs
+        self.post_processing()
+    def read_audio(self):
+        pass

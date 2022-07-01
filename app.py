@@ -3,14 +3,18 @@ import torch
 import torchaudio
 import matplotlib.pyplot as plt
 from os.path import splitext
+from os import remove
 from io import BytesIO
-
+from data.data_loader import CreateDataLoader
+from datetime import datetime
 st.title('Audio Upload')
 uploaded_audio = st.file_uploader("Please upload a audio file", ['wav', 'mp3', 'flac', 'ogg'], False)
 if uploaded_audio is not None:
     #metadata = torchaudio.info(uploaded_audio)
     #st.write('Audio Length:',metadata.num_frames)
+    #cache_filename = './cache'+datetime.now().strftime("%H_%M_%S")+'.wav'
     audio, fs = torchaudio.load(uploaded_audio)
+    # torchaudio.save(cache_filename, audio, fs)
     col1, col2, col3 = st.columns(3)
     col1.metric(label="Length", value=audio.size(-1))
     col2.metric(label="Sampling Rate", value=fs)
@@ -26,33 +30,66 @@ if uploaded_audio is not None:
 
     @st.cache(allow_output_mutation=True)
     def load_model():
-        model_dict = torch.load('/root/TRUMelnet_TRUnet/exp/PW_NBDF_models/multiscale/final_model.pth',map_location=lambda storage, loc: storage.cuda())
-        
-        model = TRUnet(n_fft=1024, win_length=512, hop_length=128, sample_rate=16000)
-        model.load_state_dict(model_dict)
-        #model.to(device)
+        model_path = './checkpoints/vctk_hifitts_G4A3L3_56ngf_6x_4_save/model_scripted.pt'
+        opt_path = './checkpoints/vctk_hifitts_G4A3L3_56ngf_6x_4_save/opt.pt'
+        opt = torch.load(opt_path)
+        opt.phase = 'test'
+        opt.snr = 72
+        model = torch.jit.load(model_path)
         model.eval()
-        return model
+        return model, opt
     
-    model = load_model()
+    with st.spinner('Loading model'):
+        model, opt = load_model()
+    st.success('Load model done!')
+    
+    @st.cache(allow_output_mutation=True)
+    def load_data():
+        from data.audio_dataset import AudioAppDataset
+        dataset = AudioAppDataset(opt, audio, fs)
+        data_loader = torch.utils.data.DataLoader(
+                dataset,
+                batch_size=20,
+                num_workers=1,
+                shuffle=False,
+                pin_memory=True)
+        return data_loader
 
+    with st.spinner('Loading data'):
+        data_loader = load_data()
+    st.success('Load data done!')
+    
     @st.cache(allow_output_mutation=True)
     def inference():
-        # inference 
-        #device = torch.device("cuda") 
-        estimate_source = model(audio) ##breakpoint
-        estimate_source = estimate_source.squeeze(1)
-        #print(estimate_source.size())
-        return estimate_source.cpu()
+        sr_audios = []
+        with torch.no_grad():
+            for i, data in enumerate(data_loader):
+                sr_spectro, sr_audio, _, _, _ = model.inference(
+                    data['label'])
+                print(sr_spectro.size())
+                if opt.gen_overlap == 0:
+                    sr_audios.append(sr_audio)
+                else:
+                    sr_audios.append(sr_audio[..., opt.gen_overlap//2:-opt.gen_overlap//2])
+        sr_audio = torch.cat(sr_audios, dim=0).view(1, -1).to(torch.float32).cpu()
+        results_file = BytesIO()
+        torchaudio.save(results_file, sr_audio, fs, format='wav')
+        return results_file, sr_audio
+    with st.spinner('processing'):
+        results_file, sr_audio = inference()
+    st.success('Done!')
 
-    results = inference()
-    results_file = BytesIO()
-    torchaudio.save(results_file, results, 16000, format="wav")
     st.title('Reconstructed Audio')
     st.audio(results_file)
     st.download_button(
      label="Download audio",
      data=results_file,
      file_name='reconstructed.wav',
-     mime='audio/wav',
- )
+     mime='audio/wav')
+    
+    sr_spectrogram = torchaudio.functional.spectrogram(sr_audio,0,torch.hann_window(512),512,256,512,2,False).squeeze()
+    sr_spectrogram = torchaudio.functional.amplitude_to_DB(sr_spectrogram.abs(),20,1e-5,1).squeeze(0)
+    sr_sp_fig, sr_sp_ax = plt.subplots()
+    sr_sp_ax.pcolormesh(sr_spectrogram.numpy(), cmap='PuBu_r')
+    st.markdown('# Reconstructed Spectrogram')
+    st.pyplot(sr_sp_fig)
