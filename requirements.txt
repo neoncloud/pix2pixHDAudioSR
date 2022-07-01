@@ -1,0 +1,15 @@
+bottleneck_transformer_pytorch==0.1.4
+dominate==2.6.0
+matplotlib==3.5.2
+numpy==1.21.5
+Pillow==9.1.1
+prefetch_generator==1.0.1
+pycuda==2022.1
+scikit_learn==1.1.1
+scipy==1.8.1
+sets==0.3.2
+streamlit==1.10.0
+tensorrt==0.0.1.dev5
+torch==1.11.0
+torchaudio==0.11.0
+torchvision==0.12.0
