@@ -10,3 +10,4 @@ opt.isTrain = False
 model = create_model(opt)
 model_scripted = torch.jit.script(model)
 torch.jit.save(model_scripted,os.path.join(opt.checkpoints_dir, opt.name, 'model_scripted.pt'))
+torch.save(opt,os.path.join(opt.checkpoints_dir, opt.name, 'opt.pt'))

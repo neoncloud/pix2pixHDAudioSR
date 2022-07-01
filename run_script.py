@@ -4,13 +4,10 @@ import os
 
 from options.train_options import TrainOptions
 from data.data_loader import CreateDataLoader
-from util.visualizer import Visualizer
-from util.spectro_img import compute_visuals
 from util.util import compute_matrics
 
 # Initilize the setup
 opt = TrainOptions().parse()
-visualizer = Visualizer(opt)
 data_loader = CreateDataLoader(opt)
 dataset = data_loader.load_data()
 dataset_size = len(data_loader)
@@ -47,9 +44,6 @@ _mse, _snr_sr, _snr_lr, _ssnr_sr, _ssnr_lr, _pesq, _lsd = compute_matrics(
 print('MSE: %.4f' % _mse)
 print('SNR_SR: %.4f' % _snr_sr)
 print('SNR_LR: %.4f' % _snr_lr)
-#print('SSNR_SR: %.4f' % _ssnr_sr)
-#print('SSNR_LR: %.4f' % _ssnr_lr)
-#print('PESQ: %.4f' % _pesq)
 print('LSD: %.4f' % _lsd)
 with open(os.path.join(opt.checkpoints_dir, opt.name, 'metric.txt'), 'w') as f:
     f.write('MSE,SNR_SR,LSD\n')

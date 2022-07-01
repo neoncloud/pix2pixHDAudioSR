@@ -116,7 +116,8 @@ class GANLoss(nn.Module):
             create_label = ((self.real_label_var is None) or
                             (self.real_label_var.shape != input.shape))
             if create_label:
-                real_tensor = torch.Tensor(input.size()).fill_(self.real_label).to(self.device)
+                real_tensor = torch.Tensor(input.size()).fill_(
+                    self.real_label).to(self.device)
                 self.real_label_var = Variable(
                     real_tensor, requires_grad=False)
             target_tensor = self.real_label_var
@@ -124,7 +125,8 @@ class GANLoss(nn.Module):
             create_label = ((self.fake_label_var is None) or
                             (self.fake_label_var.shape != input.shape))
             if create_label:
-                fake_tensor = torch.Tensor(input.size()).fill_(self.fake_label).to(self.device)
+                fake_tensor = torch.Tensor(input.size()).fill_(
+                    self.fake_label).to(self.device)
                 self.fake_label_var = Variable(
                     fake_tensor, requires_grad=False)
             target_tensor = self.fake_label_var
@@ -213,23 +215,23 @@ class LocalEnhancer(nn.Module):
         model_downsample = [nn.ReflectionPad2d(3), nn.Conv2d(input_nc, ngf_global, kernel_size=7, padding=0),
                             norm_layer(ngf_global), nn.ReLU(True),
                             downsample_layer(ngf_global, ngf_global * 2,
-                                                kernel_size=3, stride=2, padding=1),
+                                             kernel_size=3, stride=2, padding=1),
                             norm_layer(ngf_global * 2), nn.ReLU(True)]
         # residual blocks
         model_upsample = []
         for i in range(n_blocks_local):
             model_upsample += [ResnetBlock(ngf_global * 2,
-                                            padding_type=padding_type, norm_layer=norm_layer)]
+                                           padding_type=padding_type, norm_layer=norm_layer)]
         # attention bottleneck
         if n_attn_l > 0:
             middle = n_blocks_local//2
             # 8x downsample
             down = [downsample_layer(ngf_global * 2, ngf_global,
-                                        kernel_size=3, stride=2, padding=1),
+                                     kernel_size=3, stride=2, padding=1),
                     norm_layer(ngf_global), nn.ReLU(True)]
             down += [downsample_layer(ngf_global, ngf_global,
-                                        kernel_size=3, stride=2, padding=1),
-                        norm_layer(ngf_global), nn.ReLU(True)]*2
+                                      kernel_size=3, stride=2, padding=1),
+                     norm_layer(ngf_global), nn.ReLU(True)]*2
             down = nn.Sequential(*down)
             model_upsample.insert(middle, down)
 
@@ -237,17 +239,17 @@ class LocalEnhancer(nn.Module):
             input_size = tuple(map(lambda x: x//16, input_size))
             from bottleneck_transformer_pytorch import BottleStack
             attn_block = BottleStack(dim=ngf_global, fmap_size=input_size, dim_out=ngf_global*2, num_layers=n_attn_l, proj_factor=proj_factor_l,
-                                        downsample=False, heads=heads_l, dim_head=dim_head_l, activation=nn.ReLU(True), rel_pos_emb=False)
+                                     downsample=False, heads=heads_l, dim_head=dim_head_l, activation=nn.ReLU(True), rel_pos_emb=False)
             model_upsample.insert(middle, attn_block)
             model_upsample += [upsample_layer(in_channels=ngf_global*2, out_channels=ngf_global*2, kernel_size=3, stride=2, padding=1, output_padding=1),
-                                norm_layer(ngf_global), nn.ReLU(True)]*3
+                               norm_layer(ngf_global), nn.ReLU(True)]*3
 
         model_upsample += [upsample_layer(in_channels=ngf_global*2, out_channels=ngf_global, kernel_size=3, stride=2, padding=1, output_padding=1),
-                            norm_layer(ngf_global), nn.ReLU(True)]
+                           norm_layer(ngf_global), nn.ReLU(True)]
 
         # final convolution
         model_upsample += [nn.ReflectionPad2d(3), nn.Conv2d(
-                ngf, output_nc, kernel_size=7, padding=0), nn.Tanh()]
+            ngf, output_nc, kernel_size=7, padding=0), nn.Tanh()]
 
         self.model1_1 = nn.Sequential(*model_downsample)
         self.model1_2 = nn.Sequential(*model_upsample)
