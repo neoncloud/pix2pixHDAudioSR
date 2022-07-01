@@ -287,11 +287,11 @@ class LocalEnhancer(nn.Module):
             self.freeze = freeze
         print("The following layers will be freezed:")
         '''Freeze downsample layers'''
-        from bottleneck_transformer_pytorch import BottleStack
         for name, layer in self.model.named_modules():
-            if isinstance(layer, BottleStack):
+            module_name = layer.__class__.__name__
+            if 'ResnetBlock' in module_name or 'BottleStack' in module_name:
                 break
-            print(name)
+            print(name, module_name)
             for param in layer.parameters():
                 param.requires_grad = not freeze
         print(", and downsample layers in Local Generator")
@@ -362,11 +362,11 @@ class GlobalGenerator(nn.Module):
             self.freeze = freeze
         print("The following layers will be freezed:")
         '''Freeze downsample layers'''
-        from bottleneck_transformer_pytorch import BottleStack
         for name, layer in self.model.named_modules():
-            if isinstance(layer, BottleStack):
+            module_name = layer.__class__.__name__
+            if 'ResnetBlock' in module_name or 'BottleStack' in module_name:
                 break
-            print(name)
+            print(name, module_name)
             for param in layer.parameters():
                 param.requires_grad = not freeze
 
