@@ -69,27 +69,29 @@ class BaseModel(torch.nn.Module):
                     if self.opt.verbose:
                         print('Pretrained network %s has excessive layers; Only loading layers that are used' % network_label)
                 except:
-                    print('Pretrained network %s has fewer layers; The following layers are initialized:' % network_label)
+                    print('Pretrained network %s has fewer layers; The following layers are possibly matched:' % network_label)
                     pretrained_dict = torch.load(save_path)
                     module_map = self.opt.param_key_map
                     for name, param in pretrained_dict.items():
-                        if name not in model_dict:
-                            print('No match %s. Try to find mapping...'%name)
+                        if name not in model_dict or param.size()!=model_dict[name].size():
+                            #print('No match %s. Try to find mapping...'%name)
                             layer_name = name.split('.')
-                            if layer_name[1] in module_map:
-                                layer_name[1] = module_map[layer_name[1]]
-                                name_ = "."
-                                name_ = name_.join(layer_name)
-                                print(name,'->',name_)
-                                name = name_
-                            else: continue
+                            key = layer_name[0]+'.'+layer_name[1]
+                            if key in module_map:
+                                layer_name[1] = module_map[key]
+                                name_ = name
+                                name = "."
+                                name = name.join(layer_name)
+                                print("    ",name_,'->',name)
+                            else:
+                                for k, v in model_dict.items():
+                                    if v.size() == param.size():
+                                        print("    ",k,":",name)
+                                continue
                         if isinstance(param, torch.nn.Parameter):
                             # backwards compatibility for serialized parameters
                             param = param.data
-                        try:
-                            model_dict[name].copy_(param)
-                        except:
-                            print('Not match!')
+                        model_dict[name].copy_(param)
                     # for k, v in pretrained_dict.items():
                     #     if v.size() == model_dict[k].size():
                     #         print('Layer %s initialized'%k)
