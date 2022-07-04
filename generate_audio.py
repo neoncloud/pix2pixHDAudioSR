@@ -25,6 +25,7 @@ spectro_pha = []
 norm_params = []
 audio = []
 model.eval()
+stride = opt.segment_length-opt.gen_overlap
 with torch.no_grad():
     for i, data in enumerate(dataset):
         sr_spectro, sr_audio, lr_pha, norm_param, lr_spectro = model.inference(
@@ -33,13 +34,24 @@ with torch.no_grad():
         spectro_mag.append(sr_spectro)
         spectro_pha.append(lr_pha)
         norm_params.append(norm_param)
-        if opt.gen_overlap == 0:
-            audio.append(sr_audio)
-        else:
-            audio.append(sr_audio[..., opt.gen_overlap//2:-opt.gen_overlap//2])
+        audio.append(sr_audio)
 
 # Concatenate the audio
-audio = torch.cat(audio, dim=0).view(1, -1)
+if opt.gen_overlap > 0:
+    from torch.nn.functional import fold
+    out_len = (dataset_size-1) * stride + opt.segment_length
+    print(out_len)
+    audio = torch.cat(audio,dim=0)
+    audio[...,:opt.gen_overlap] *= 0.5
+    audio[...,-opt.gen_overlap:] *= 0.5
+    audio = audio.squeeze().transpose(-1,-2)
+    print(audio.shape)
+    audio = fold(audio, kernel_size=(1,opt.segment_length), stride=(1,stride), output_size=(1,out_len)).squeeze(0)
+    audio = audio[...,opt.gen_overlap//2:-opt.gen_overlap//2]
+    print(audio.shape)
+else:
+    audio = torch.cat(audio, dim=0).view(1, -1)
+audio_len = data_loader.dataset.raw_audio.size(-1)
 # print(audio.size())
 
 # Evaluate the matrics
@@ -54,23 +66,23 @@ print('SNR_LR: %.4f' % _snr_lr)
 #print('PESQ: %.4f' % _pesq)
 print('LSD: %.4f' % _lsd)
 
-# Generate visuals
-lr_mag, _, sr_mag, _, _, _, _, _ = model.encode_input(
-    lr_audio=data_loader.dataset.lr_audio, hr_audio=audio)
-if opt.explicit_encoding:
-    lr_mag = 0.5*(lr_mag[:, 0, :, :]+lr_mag[:, 1, :, :])
-    sr_mag = 0.5*(sr_mag[:, 0, :, :]+sr_mag[:, 1, :, :])
-lr_spectro, lr_hist, _ = compute_visuals(
-    sp=lr_mag.squeeze().detach().cpu().numpy(), abs=True)
-sr_spectro, sr_hist, _ = compute_visuals(
-    sp=sr_mag.squeeze().detach().cpu().numpy(), abs=True)
-visuals = {'lable_spectro':         lr_spectro,
-           'generated_spectro':    sr_spectro,
-           'lable_hist':           lr_hist,
-           'generated_hist':       sr_hist}
+# # Generate visuals
+# lr_mag, _, sr_mag, _, _, _, _, _ = model.encode_input(
+#     lr_audio=data_loader.dataset.lr_audio, hr_audio=audio)
+# if opt.explicit_encoding:
+#     lr_mag = 0.5*(lr_mag[:, 0, :, :]+lr_mag[:, 1, :, :])
+#     sr_mag = 0.5*(sr_mag[:, 0, :, :]+sr_mag[:, 1, :, :])
+# lr_spectro, lr_hist, _ = compute_visuals(
+#     sp=lr_mag.squeeze().detach().cpu().numpy(), abs=True)
+# sr_spectro, sr_hist, _ = compute_visuals(
+#     sp=sr_mag.squeeze().detach().cpu().numpy(), abs=True)
+# visuals = {'lable_spectro':         lr_spectro,
+#            'generated_spectro':    sr_spectro,
+#            'lable_hist':           lr_hist,
+#            'generated_hist':       sr_hist}
 
-# Save files
-visualizer.display_current_results(visuals, 1, 1)
+# # Save files
+# visualizer.display_current_results(visuals, 1, 1)
 with open(os.path.join(opt.checkpoints_dir, opt.name, 'metric.txt'), 'w') as f:
     f.write('MSE,SNR_SR,LSD\n')
     f.write('%f,%f,%f' % (_mse, _snr_sr, _lsd))

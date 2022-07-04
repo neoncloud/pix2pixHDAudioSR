@@ -21,6 +21,7 @@ spectro_pha = []
 norm_params = []
 audio = []
 model.eval()
+stride = opt.segment_length-opt.gen_overlap
 with torch.no_grad():
     for i, data in enumerate(dataset):
         sr_spectro, sr_audio, lr_pha, norm_param, lr_spectro = model.inference(
@@ -29,18 +30,29 @@ with torch.no_grad():
         spectro_mag.append(sr_spectro)
         spectro_pha.append(lr_pha)
         norm_params.append(norm_param)
-        if opt.gen_overlap == 0:
-            audio.append(sr_audio)
-        else:
-            audio.append(sr_audio[..., opt.gen_overlap//2:-opt.gen_overlap//2])
+        audio.append(sr_audio)
 
 # Concatenate the audio
-audio = torch.cat(audio, dim=0).view(1, -1)
+if opt.gen_overlap > 0:
+    from torch.nn.functional import fold
+    out_len = (dataset_size-1) * stride + opt.segment_length
+    print(out_len)
+    audio = torch.cat(audio,dim=0)
+    audio[...,:opt.gen_overlap] *= 0.5
+    audio[...,-opt.gen_overlap:] *= 0.5
+    audio = audio.squeeze().transpose(-1,-2)
+    print(audio.shape)
+    audio = fold(audio, kernel_size=(1,opt.segment_length), stride=(1,stride), output_size=(1,out_len)).squeeze(0)
+    audio = audio[...,opt.gen_overlap//2:-opt.gen_overlap//2]
+    print(audio.shape)
+else:
+    audio = torch.cat(audio, dim=0).view(1, -1)
 audio_len = data_loader.dataset.raw_audio.size(-1)
 
 # Compute metrics
+K = 16000
 _mse, _snr_sr, _snr_lr, _ssnr_sr, _ssnr_lr, _pesq, _lsd = compute_matrics(
-    data_loader.dataset.raw_audio, data_loader.dataset.lr_audio[..., :audio_len], audio[..., :audio_len], opt)
+    data_loader.dataset.raw_audio[..., K:audio_len-K], data_loader.dataset.lr_audio[..., K:audio_len-K], audio[..., K:audio_len-K], opt)
 print('MSE: %.4f' % _mse)
 print('SNR_SR: %.4f' % _snr_sr)
 print('SNR_LR: %.4f' % _snr_lr)

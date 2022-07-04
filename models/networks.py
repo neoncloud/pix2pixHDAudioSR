@@ -270,31 +270,33 @@ class LocalEnhancer(nn.Module):
         model_downsample = self.model1_1
         model_upsample = self.model1_2
         input_i = input_downsampled[0]
-        if self.freeze:
-            with torch.no_grad():
-                output_downsample = model_downsample(input_i)
-            output_prev = model_upsample(
-                output_downsample + output_prev)
-        else:
-            output_prev = model_upsample(
+        output_prev = model_upsample(
                 model_downsample(input_i) + output_prev)
         return output_prev
 
-    def set_freeze(self, freeze=True):
-        if self.freeze == freeze:
-            return
-        else:
-            self.freeze = freeze
+    def set_freeze(self, freeze_global=True, freeze_local_d=True, freeze_local_u=True):
         print("The following layers will be freezed:")
         '''Freeze downsample layers'''
-        for name, layer in self.model.named_modules():
+        for name, layer in self.model.named_children():
             module_name = layer.__class__.__name__
             if 'ResnetBlock' in module_name or 'BottleStack' in module_name:
-                break
+                print('skip',module_name)
+                continue
             print(name, module_name)
             for param in layer.parameters():
-                param.requires_grad = not freeze
-        print(", and downsample layers in Local Generator")
+                param.requires_grad = not freeze_global
+            #print(", and downsample layers in Local Generator")
+        
+        for name, layer in self.model1_1.named_children():
+            module_name = layer.__class__.__name__
+            for param in layer.parameters():
+                print(name, module_name)
+                param.requires_grad = not freeze_local_d
+
+        for name, layer in self.model1_2.named_children():
+            module_name = layer.__class__.__name__
+            for param in layer.parameters():
+                param.requires_grad = not freeze_local_u
 
 
 class GlobalGenerator(nn.Module):

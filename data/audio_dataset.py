@@ -192,7 +192,7 @@ class AudioAppDataset(AudioTestDataset):
         self.win_length = opt.win_length
         self.center = opt.center
         self.dataroot = audio
-        self.is_lr_input = opt.is_lr_input
+        self.is_lr_input = fs <= 8000
         self.overlap = opt.gen_overlap
         self.add_noise = opt.add_noise
         self.snr = opt.snr
