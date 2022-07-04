@@ -217,7 +217,7 @@ class Pix2PixHDModel(BaseModel):
         # define networks
         # Generator network
         # set freeze network
-        self.freeze = opt.freeze
+        self.freeze = opt.freeze_g_d or opt.freeze_g_u or opt.freeze_l_d or opt.freeze_l_u
         netG_input_nc = input_nc
         if not opt.no_instance:
             netG_input_nc += 1
@@ -226,7 +226,7 @@ class Pix2PixHDModel(BaseModel):
         self.netG = networks.define_G(netG_input_nc, opt.output_nc, opt.ngf, opt.netG,
                                       opt.n_downsample_global, opt.n_blocks_global, opt.n_local_enhancers,
                                       opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids, upsample_type=opt.upsample_type, downsample_type=opt.downsample_type, input_size=(opt.bins, opt.n_fft//2), n_attn_g=opt.n_blocks_attn_g, n_attn_l=opt.n_blocks_attn_l, proj_factor_g=opt.proj_factor_g, heads_g=opt.heads_g, dim_head_g=opt.dim_head_g, proj_factor_l=opt.proj_factor_l, heads_l=opt.heads_l, dim_head_l=opt.dim_head_l)
-        self.netG.set_freeze(opt.freeze)
+        self.netG.set_freeze(opt.freeze_g_d, opt.freeze_g_u, opt.freeze_l_d, opt.freeze_l_u)
         # Discriminator network
         if self.isTrain:
             use_sigmoid = opt.no_lsgan

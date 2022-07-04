@@ -274,30 +274,36 @@ class LocalEnhancer(nn.Module):
                 model_downsample(input_i) + output_prev)
         return output_prev
 
-    def set_freeze(self, freeze_global=True, freeze_local_d=True, freeze_local_u=True):
+    def set_freeze(self, freeze_global_d=True, freeze_global_u=False, freeze_local_d=True, freeze_local_u=False):
         print("The following layers will be freezed:")
         '''Freeze downsample layers'''
+        print('Global:')
         for name, layer in self.model.named_children():
             module_name = layer.__class__.__name__
-            if 'ResnetBlock' in module_name or 'BottleStack' in module_name:
-                print('skip',module_name)
-                continue
-            print(name, module_name)
-            for param in layer.parameters():
-                param.requires_grad = not freeze_global
-            #print(", and downsample layers in Local Generator")
-        
+            if 'Conv2d' in module_name or 'ConvResBlock' in module_name:
+                if freeze_global_d:
+                    print(name, module_name)
+                for param in layer.parameters():
+                    param.requires_grad = not freeze_global_d
+            elif 'InterpolateUpsample' in module_name or 'ConvTranspose2d' in module_name or 'ResnetBlock' in module_name or 'BottleStack' in module_name:
+                if freeze_global_u:
+                    print(name, module_name)
+                for param in layer.parameters():
+                    param.requires_grad = not freeze_global_u
+        print('Loacl:')
         for name, layer in self.model1_1.named_children():
             module_name = layer.__class__.__name__
             for param in layer.parameters():
-                print(name, module_name)
+                if freeze_local_d:
+                    print(name, module_name)
                 param.requires_grad = not freeze_local_d
 
         for name, layer in self.model1_2.named_children():
             module_name = layer.__class__.__name__
             for param in layer.parameters():
+                if freeze_local_u:
+                    print(name, module_name)
                 param.requires_grad = not freeze_local_u
-
 
 class GlobalGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=64, n_downsampling=3, n_blocks=9, norm_layer=nn.BatchNorm2d,
@@ -364,7 +370,7 @@ class GlobalGenerator(nn.Module):
             self.freeze = freeze
         print("The following layers will be freezed:")
         '''Freeze downsample layers'''
-        for name, layer in self.model.named_modules():
+        for name, layer in self.model.named_children():
             module_name = layer.__class__.__name__
             if 'ResnetBlock' in module_name or 'BottleStack' in module_name:
                 break

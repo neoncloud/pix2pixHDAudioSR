@@ -88,26 +88,26 @@ class BaseModel(torch.nn.Module):
                                     if v.size() == param.size():
                                         print("    ",k,":",name)
                                 continue
-                        if isinstance(param, torch.nn.Parameter):
-                            # backwards compatibility for serialized parameters
-                            param = param.data
-                        model_dict[name].copy_(param)
+                        # if isinstance(param, torch.nn.Parameter):
+                        #     # backwards compatibility for serialized parameters
+                        #     param = param.data
+                        model_dict[name]=param
                     # for k, v in pretrained_dict.items():
                     #     if v.size() == model_dict[k].size():
                     #         print('Layer %s initialized'%k)
                     #         model_dict[k] = v
 
-                    if sys.version_info >= (3,0):
-                        not_initialized = set()
-                    else:
-                        from sets import Set
-                        not_initialized = Set()
+                    # if sys.version_info >= (3,0):
+                    #     not_initialized = set()
+                    # else:
+                    #     from sets import Set
+                    #     not_initialized = Set()
 
-                    for k, v in model_dict.items():
-                        if k not in pretrained_dict or v.size() != pretrained_dict[k].size():
-                            not_initialized.add(k.split('.')[0])
+                    # for k, v in model_dict.items():
+                    #     if k not in pretrained_dict or v.size() != pretrained_dict[k].size():
+                    #         not_initialized.add(k.split('.')[0])
 
-                    print(sorted(not_initialized))
+                    # print(sorted(not_initialized))
                     network.load_state_dict(model_dict)
 
     def update_learning_rate():
