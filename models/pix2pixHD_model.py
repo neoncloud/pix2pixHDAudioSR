@@ -606,7 +606,7 @@ class Pix2PixHDModel(BaseModel):
 
             sr_spectro = self.netG.forward(lr_input)
             if self.fit_residual:
-                sr_spectro = 1.05*sr_spectro+0.95*lr_spectro
+                sr_spectro = sr_spectro+lr_spectro
         sr_audio = self.preprocess.to_audio(sr_spectro, lr_norm_param, lr_pha)
 
         return sr_spectro, sr_audio, lr_pha, lr_norm_param, lr_spectro

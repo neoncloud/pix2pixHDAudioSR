@@ -54,3 +54,4 @@ gen1.sh
 gen0.sh
 demo.sh
 batch_run.sh
+eval.sh

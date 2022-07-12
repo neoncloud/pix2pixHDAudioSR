@@ -18,7 +18,7 @@ class AudioDataset(BaseDataset):
         self.hop_length = opt.hop_length
         self.win_length = opt.win_length
         self.audio_file = self.get_files(opt.dataroot)
-        self.audio_len = [0]*len(self.audio_file)
+        self.audio_len = [(0,0)]*len(self.audio_file)
         self.center = opt.center
         self.add_noise = opt.add_noise
         self.snr = opt.snr
@@ -33,20 +33,21 @@ class AudioDataset(BaseDataset):
 
     def readaudio(self, idx):
         file_path = self.audio_file[idx]
-        if self.audio_len[idx] == 0:
+        if self.audio_len[idx][1] == 0:
             metadata = torchaudio.info(file_path)
             audio_length = metadata.num_frames
-            self.audio_len[idx] = audio_length
+            fs = metadata.sample_rate
+            self.audio_len[idx] = (fs,audio_length)
         else:
-            audio_length = self.audio_len[idx]
-        max_audio_start = audio_length - self.segment_length
+            fs,audio_length = self.audio_len[idx]
+        max_audio_start = int(audio_length - self.segment_length*fs/self.hr_sampling_rate)
         if max_audio_start > 0:
             offset = torch.randint(
                 low=0, high=max_audio_start, size=(1,)).item()
             waveform, orig_sample_rate = torchaudio.load(
                 file_path, frame_offset=offset, num_frames=self.segment_length)
         else:
-            #print("Warning: %s is shorter than segment_length"%file_path, metadata.num_frames)
+            print("Warning: %s is shorter than segment_length"%file_path, audio_length)
             waveform, orig_sample_rate = torchaudio.load(file_path)
         return waveform, orig_sample_rate
 
@@ -192,7 +193,7 @@ class AudioAppDataset(AudioTestDataset):
         self.win_length = opt.win_length
         self.center = opt.center
         self.dataroot = audio
-        self.is_lr_input = fs <= 8000
+        self.is_lr_input = opt.is_lr_input
         self.overlap = opt.gen_overlap
         self.add_noise = opt.add_noise
         self.snr = opt.snr
