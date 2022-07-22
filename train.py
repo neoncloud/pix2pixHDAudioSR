@@ -4,7 +4,8 @@ from util.util import compute_matrics
 from util.visualizer import Visualizer
 from options.train_options import TrainOptions
 from models.models import create_model
-from models.mdct import IMDCT4
+from pl_bolts.datamodules import AsynchronousLoader
+
 import math
 import os
 import time
@@ -13,8 +14,8 @@ import gc
 
 import numpy as np
 import torch
-from torch.autograd import Variable
-from prefetch_generator import BackgroundGenerator
+#from prefetch_generator import BackgroundGenerator
+
 
 def lcm(a, b): return abs(a * b)/math.gcd(a, b) if a and b else 0
 
@@ -24,6 +25,7 @@ def lcm(a, b): return abs(a * b)/math.gcd(a, b) if a and b else 0
 # debugpy.wait_for_client()
 # os.environ['CUDA_VISIBLE_DEVICES']='0'
 os.environ['NCCL_P2P_DISABLE'] = '1'
+torch.backends.cudnn.benchmark = True
 # Get the training options
 opt = TrainOptions().parse()
 # Set the seed
@@ -44,7 +46,7 @@ else:
 
 # Create the data loader
 data_loader = CreateDataLoader(opt)
-dataset = data_loader.load_data()
+dataset = AsynchronousLoader(data_loader.load_data(), device='cuda')
 dataset_size = len(data_loader)
 eval_dataset = data_loader.eval_data()
 eval_dataset_size = data_loader.eval_data_len()
@@ -109,10 +111,10 @@ def eval_model():
     lsd = []
     for j, eval_data in enumerate(eval_dataset):
         model.eval()
-        lr_audio = eval_data['LR_audio']
-        hr_audio = eval_data['HR_audio']
+        lr_audio = eval_data['LR_audio'].cuda()
+        hr_audio = eval_data['HR_audio'].cuda()
         with torch.no_grad():
-            sr_spectro, sr_audio, lr_pha, lr_norm_param, lr_spectro = model.inference(lr_audio)
+            _, sr_audio, _, _, _ = model.inference(lr_audio)
             _mse, _snr_sr, _snr_lr, _ssnr_sr, _ssnr_lr, _pesq, _lsd = compute_matrics(
                 hr_audio.squeeze(), lr_audio.squeeze(), sr_audio.squeeze(), opt)
             err.append(_mse)
@@ -141,13 +143,13 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         epoch_iter = epoch_iter % dataset_size
     if epoch > opt.niter_limit_aux:
         model.limit_aux_loss = True
-    for i, data in BackgroundGenerator(enumerate(dataset, start=epoch_iter)):
+    for i, data in enumerate(dataset, start=epoch_iter):
         if end:
             print('exiting and saving the model at the epoch %d, iters %d' %
                   (epoch, total_steps))
             model.save('latest')
             model.save(epoch)
-            np.savetxt(iter_path, (epoch+1, 0), delimiter=',', fmt='%d')
+            np.savetxt(iter_path, (epoch, epoch_iter), delimiter=',', fmt='%d')
             exit(0)
         if total_steps % opt.print_freq == print_delta:
             iter_start_time = time.time()
@@ -160,9 +162,11 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         ############## Forward Pass ######################
         if opt.fp16:
             with autocast():
-                losses, generated = model._forward(Variable(data['LR_audio']), Variable(data['HR_audio']), infer=save_fake)
+                losses, _ = model._forward(
+                    data['LR_audio'], data['HR_audio'], infer=False)
         else:
-            losses, generated = model._forward(Variable(data['LR_audio']), Variable(data['HR_audio']), infer=save_fake)
+            losses, _ = model._forward(
+                data['LR_audio'], data['HR_audio'], infer=False)
 
         # Sum per device losses
         losses = [torch.mean(x) if not isinstance(x, int)
@@ -173,7 +177,7 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5 + (loss_dict.get('D_fake_t', 0) + loss_dict.get(
             'D_real_t', 0))*0.5 + (loss_dict.get('D_fake_mr', 0) + loss_dict.get('D_real_mr', 0))*0.5
         loss_G = loss_dict['G_GAN'] + loss_dict.get('G_mat', 0) + loss_dict.get('G_GAN_Feat', 0) + loss_dict.get(
-            'G_VGG', 0) + loss_dict.get('G_GAN_t', 0) + loss_dict.get('G_GAN_mr', 0)
+            'G_VGG', 0) + loss_dict.get('G_GAN_t', 0) + loss_dict.get('G_GAN_mr', 0) + loss_dict.get('G_shift', 0)
 
         ############### Backward Pass ####################
         # update generator weights
@@ -213,6 +217,7 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         if save_fake:
             visuals = model.get_current_visuals()
             visualizer.display_current_results(visuals, epoch, total_steps)
+            del visuals
 
         # save latest model
         if total_steps % opt.save_latest_freq == save_delta:

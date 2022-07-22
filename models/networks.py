@@ -1,9 +1,7 @@
-from typing import List
 from torchvision import models
 import torch
 import torch.nn as nn
 import functools
-from torch.autograd import Variable
 import numpy as np
 from torch.nn.functional import interpolate, pad
 
@@ -116,19 +114,13 @@ class GANLoss(nn.Module):
             create_label = ((self.real_label_var is None) or
                             (self.real_label_var.shape != input.shape))
             if create_label:
-                real_tensor = torch.Tensor(input.size()).fill_(
-                    self.real_label).to(self.device)
-                self.real_label_var = Variable(
-                    real_tensor, requires_grad=False)
+                self.real_label_var = torch.full(size=input.size(),fill_value=self.real_label, device=self.device, requires_grad=False)
             target_tensor = self.real_label_var
         else:
             create_label = ((self.fake_label_var is None) or
                             (self.fake_label_var.shape != input.shape))
             if create_label:
-                fake_tensor = torch.Tensor(input.size()).fill_(
-                    self.fake_label).to(self.device)
-                self.fake_label_var = Variable(
-                    fake_tensor, requires_grad=False)
+                self.fake_label_var = torch.full(size=input.size(),fill_value=self.fake_label, device=self.device, requires_grad=False)
             target_tensor = self.fake_label_var
         return target_tensor
 
@@ -304,6 +296,7 @@ class LocalEnhancer(nn.Module):
                 if freeze_local_u:
                     print(name, module_name)
                 param.requires_grad = not freeze_local_u
+
 
 class GlobalGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=64, n_downsampling=3, n_blocks=9, norm_layer=nn.BatchNorm2d,

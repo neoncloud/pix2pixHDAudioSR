@@ -9,6 +9,7 @@ from . import networks
 from .mdct import MDCT4, IMDCT4
 #from dct.dct_native import DCT_2N_native, IDCT_2N_native
 import torchaudio.functional as aF
+from torch_audiomentations import Shift
 
 
 class Audio2Spectro(torch.nn.Module):
@@ -21,6 +22,7 @@ class Audio2Spectro(torch.nn.Module):
         self.device = 'cuda' if len(self.gpu_ids) > 0 else 'cpu'
         self.up_ratio = self.hr_sampling_rate / self.lr_sampling_rate
         self.window = kbdwin(self.win_length).to(self.device)
+        self.min_value = opt.min_value
         #self._dct = DCT_2N_native()
         self._mdct = MDCT4(n_fft=self.n_fft, hop_length=self.hop_length,
                            win_length=self.win_length, window=self.window, device=self.device)
@@ -30,7 +32,7 @@ class Audio2Spectro(torch.nn.Module):
 
     def to_spectro(self, audio: torch.Tensor, mask: bool = False, mask_size: int = -1):
         # Forward Transformation (MDCT)
-        spectro, frames = self._mdct(audio.to(self.device), True)
+        spectro, frames = self._mdct(audio, True)
         spectro = spectro.unsqueeze(1)
         pha = torch.sign(spectro)
 
@@ -100,8 +102,7 @@ class Audio2Spectro(torch.nn.Module):
             #log_spectro = torch.cat((log_spectro, log_spectro.abs()), dim=1)
         else:
             log_spectro = aF.amplitude_to_DB(
-                (torch.abs(spectro) + self.min_value), 20.0, self.min_value, 1.0
-            ).to(self.device)
+                (torch.abs(spectro) + self.min_value), 20.0, self.min_value, 1.0)
 
         mean = log_spectro.mean().float()
         std = log_spectro.var().sqrt().float()
@@ -111,10 +112,10 @@ class Audio2Spectro(torch.nn.Module):
             audio_min = log_spectro.flatten(-2).min(dim=-
                                                     1).values[:, :, None, None].float()
         else:
-            audio_min = torch.tensor([self.src_range[0]])[
-                None, None, None, :].to(self.device)
-            audio_max = torch.tensor([self.src_range[1]])[
-                None, None, None, :].to(self.device)
+            audio_min = torch.tensor([self.src_range[0]], device=self.device)[
+                None, None, None, :]
+            audio_max = torch.tensor([self.src_range[1]], device=self.device)[
+                None, None, None, :]
         log_spectro = (log_spectro-audio_min)/(audio_max-audio_min)
         log_spectro = log_spectro * \
             (self.norm_range[1]-self.norm_range[0]
@@ -130,7 +131,7 @@ class Audio2Spectro(torch.nn.Module):
         if self.arcsinh_transform:
             return torch.sinh(log_spectro*torch.log(torch.tensor(10.0)))/self.arcsinh_gain
         else:
-            return aF.DB_to_amplitude(log_spectro.to(self.device), 10.0, 0.5)-self.min_value
+            return aF.DB_to_amplitude(log_spectro, 10.0, 0.5)-self.min_value
 
     def to_audio(self, log_spectro: torch.Tensor, norm_param: Dict[str, torch.Tensor], pha: torch.Tensor):
         spectro = self.denormalize(
@@ -165,6 +166,12 @@ class Audio2Spectro(torch.nn.Module):
         _, frames = self._imdct(spectro.squeeze(), True)
         return frames
 
+    def audio_rand_shift(self, lr, hr, sr, n: int = 20):
+        audio = torch.stack((lr, hr, sr), dim=1)
+        shift = Shift(min_shift=-n//2, max_shift=n//2,
+                      shift_unit='samples', rollover=False)
+        return shift(audio).chunk(3, dim=1)
+
     def norm_frames(self, frames):
         frames = aF.amplitude_to_DB(
             torch.abs(frames), 20, self.min_value, 1)
@@ -192,12 +199,12 @@ class Pix2PixHDModel(BaseModel):
     def name(self):
         return 'Pix2PixHDModel'
 
-    def init_loss_filter(self, use_gan_feat_loss, use_vgg_loss, use_match_loss, use_time_loss, use_mr_loss):
+    def init_loss_filter(self, use_gan_feat_loss, use_vgg_loss, use_match_loss, use_time_loss, use_mr_loss, use_shift_loss):
         flags = (True, use_gan_feat_loss, use_vgg_loss, use_match_loss, use_time_loss,
-                 use_time_loss, use_time_loss, use_mr_loss, use_mr_loss, use_mr_loss, True, True)
+                 use_time_loss, use_time_loss, use_mr_loss, use_mr_loss, use_mr_loss, use_shift_loss, True, True)
 
-        def loss_filter(g_gan, g_gan_feat, g_vgg, g_mat, g_gan_t, d_real_t, d_fake_t, g_gan_mr, d_real_mr, d_fake_mr, d_real, d_fake):
-            return [l for (l, f) in zip((g_gan, g_gan_feat, g_vgg, g_mat, g_gan_t, d_real_t, d_fake_t, g_gan_mr, d_real_mr, d_fake_mr, d_real, d_fake), flags) if f]
+        def loss_filter(g_gan, g_gan_feat, g_vgg, g_mat, g_gan_t, d_real_t, d_fake_t, g_gan_mr, d_real_mr, d_fake_mr, g_shift, d_real, d_fake):
+            return [l for (l, f) in zip((g_gan, g_gan_feat, g_vgg, g_mat, g_gan_t, d_real_t, d_fake_t, g_gan_mr, d_real_mr, d_fake_mr, g_shift, d_real, d_fake), flags) if f]
         return loss_filter
 
     def initialize(self, opt):
@@ -226,7 +233,8 @@ class Pix2PixHDModel(BaseModel):
         self.netG = networks.define_G(netG_input_nc, opt.output_nc, opt.ngf, opt.netG,
                                       opt.n_downsample_global, opt.n_blocks_global, opt.n_local_enhancers,
                                       opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids, upsample_type=opt.upsample_type, downsample_type=opt.downsample_type, input_size=(opt.bins, opt.n_fft//2), n_attn_g=opt.n_blocks_attn_g, n_attn_l=opt.n_blocks_attn_l, proj_factor_g=opt.proj_factor_g, heads_g=opt.heads_g, dim_head_g=opt.dim_head_g, proj_factor_l=opt.proj_factor_l, heads_l=opt.heads_l, dim_head_l=opt.dim_head_l)
-        self.netG.set_freeze(opt.freeze_g_d, opt.freeze_g_u, opt.freeze_l_d, opt.freeze_l_u)
+        self.netG.set_freeze(opt.freeze_g_d, opt.freeze_g_u,
+                             opt.freeze_l_d, opt.freeze_l_u)
         # Discriminator network
         if self.isTrain:
             use_sigmoid = opt.no_lsgan
@@ -297,19 +305,21 @@ class Pix2PixHDModel(BaseModel):
 
             # define loss functions
             self.loss_filter = self.init_loss_filter(
-                not opt.no_ganFeat_loss, not opt.no_vgg_loss, opt.use_match_loss, opt.use_hifigan_D or opt.use_time_D, opt.use_multires_D)
+                not opt.no_ganFeat_loss, not opt.no_vgg_loss, opt.use_match_loss, opt.use_hifigan_D or opt.use_time_D, opt.use_multires_D, opt.use_shifted_match)
 
             self.criterionGAN = networks.GANLoss(
                 use_lsgan=not opt.no_lsgan, device=self.device)
             self.criterionFeat = torch.nn.L1Loss()
             if opt.use_match_loss:
                 self.criterionMatch = torch.nn.MSELoss()
+            if opt.use_shifted_match:
+                self.criterionSMatch = torch.nn.L1Loss()
             if not opt.no_vgg_loss:
                 self.criterionVGG = networks.VGGLoss(self.gpu_ids)
 
             # Names so we can breakout loss
             self.loss_names = self.loss_filter('G_GAN', 'G_GAN_Feat', 'G_VGG', 'G_mat', 'G_GAN_t',
-                                               'D_real_t', 'D_fake_t', 'G_GAN_mr', 'D_real_mr', 'D_fake_mr', 'D_real', 'D_fake')
+                                               'D_real_t', 'D_fake_t', 'G_GAN_mr', 'D_real_mr', 'D_fake_mr', 'G_shift', 'D_real', 'D_fake')
 
             # initialize optimizers
             # optimizer G
@@ -376,7 +386,7 @@ class Pix2PixHDModel(BaseModel):
             waveform = self.preprocess.to_audio(
                 input, norm_param=norm_param, pha=pha).squeeze().unsqueeze(1)
         else:
-            waveform = input.to(self.device).unsqueeze(1)
+            waveform = input.unsqueeze(1)
         if self.fp16:
             waveform = waveform.half()
         return self.hifigan_D.forward(waveform)
@@ -404,7 +414,7 @@ class Pix2PixHDModel(BaseModel):
         return sr_spectro, sr_pha, hr_spectro, hr_pha, hr_norm_param, lr_spectro, lr_pha, lr_norm_param
 
     def _forward(self, lr_audio, hr_audio, infer=False):
-        sr_spectro, sr_pha, hr_spectro, hr_pha, hr_norm_param, lr_spectro, lr_pha, lr_norm_param = self.forward(
+        sr_spectro, sr_pha, hr_spectro, hr_pha, hr_norm_param, lr_spectro, _, lr_norm_param = self.forward(
             lr_audio, hr_audio)
         # Fake Detection and Loss
         if self.abs_spectro and self.arcsinh_transform:
@@ -430,6 +440,21 @@ class Pix2PixHDModel(BaseModel):
             torch.cat((lr_spectro, sr_input), dim=1))
         loss_G_GAN = self.criterionGAN(pred_fake, True)
 
+        loss_shift = 0
+        if self.use_shifted_match:
+            n = 20
+            sr_audio = self.preprocess.to_audio(
+                sr_spectro, norm_param=lr_norm_param, pha=torch.empty(1)).squeeze(1).to(lr_audio.dtype).squeeze()
+            _, _hr_audio, _sr_audio = self.preprocess.audio_rand_shift(
+                lr_audio.to(self.device).squeeze(), hr_audio.to(self.device).squeeze(), sr_audio, n)
+            _hr_audio, _sr_audio = _hr_audio.squeeze(), _sr_audio.squeeze()
+
+            _sr_spectro, _, _ = self.preprocess.to_spectro(_sr_audio)
+            _hr_spectro, _, _ = self.preprocess.to_spectro(_hr_audio)
+
+            loss_shift = self.criterionSMatch(
+                _sr_spectro, _hr_spectro.detach())
+
         # Multi_Res Discriminator loss
         loss_G_GAN_mr = 0
         loss_D_real_mr = 0
@@ -438,7 +463,7 @@ class Pix2PixHDModel(BaseModel):
             lr_audio = lr_audio.to(self.device).unsqueeze(1)
             hr_audio = hr_audio.to(self.device).unsqueeze(1)
             sr_audio = self.preprocess.to_audio(
-                sr_spectro, norm_param=lr_norm_param).squeeze(1).to(lr_audio.dtype)
+                sr_spectro, norm_param=lr_norm_param, pha=torch.empty(1)).squeeze(1).to(lr_audio.dtype)
             if self.explicit_encoding:
                 sr_audio = np.sqrt(self.up_ratio-1)*sr_audio
 
@@ -590,7 +615,7 @@ class Pix2PixHDModel(BaseModel):
             self.current_real_pha = None
 
         # Only return the fake_B image if necessary to save BW
-        return [self.loss_filter(loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_G_match, loss_G_GAN_time, loss_D_real_time, loss_D_fake_time, loss_G_GAN_mr, loss_D_real_mr, loss_D_fake_mr, loss_D_real, loss_D_fake), None if not infer else sr_spectro]
+        return [self.loss_filter(loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_G_match, loss_G_GAN_time, loss_D_real_time, loss_D_fake_time, loss_G_GAN_mr, loss_D_real_mr, loss_D_fake_mr, loss_shift, loss_D_real, loss_D_fake), torch.empty if not infer else sr_spectro]
 
     def inference(self, lr_audio):
         # Encode Inputs

@@ -8,8 +8,8 @@ import time
 import torch
 import csv
 import numpy as np
-from torch.autograd import Variable
-from prefetch_generator import BackgroundGenerator
+#from torch.autograd import Variable
+#from prefetch_generator import BackgroundGenerator
 
 
 def lcm(a, b): return abs(a * b)/math.gcd(a, b) if a and b else 0
@@ -60,15 +60,15 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     epoch_start_time = time.time()
     if epoch != start_epoch:
         epoch_iter = epoch_iter % dataset_size
-    for i, data in BackgroundGenerator(enumerate(dataset, start=epoch_iter)):
+    for i, data in enumerate(dataset, start=epoch_iter):
         if total_steps % opt.print_freq == print_delta:
             iter_start_time = time.time()
         total_steps += opt.batchSize
         epoch_iter += opt.batchSize
 
         ############## Forward Pass ######################
-        lr_audio = data['LR_audio']
-        hr_audio = data['HR_audio']
+        lr_audio = data['LR_audio'].cuda()
+        hr_audio = data['HR_audio'].cuda()
         with torch.no_grad():
             if opt.fp16:
                 with autocast():

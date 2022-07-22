@@ -391,7 +391,7 @@ class MDCT2(nn.Module):
         signal = signal.unfold(dimension=-1, size=self.win_length, step=self.hop_length)
 
         # Apply windows to each pieces
-        signal = torch.mul(signal.to(self.device), self.window.to(self.device))
+        signal = torch.mul(signal, self.window)
         if return_frames:
             frames = signal.clone()
 
@@ -500,7 +500,7 @@ class MDCT4(nn.Module):
         signal = signal.unfold(dimension=-1, size=self.win_length, step=self.hop_length)
 
         # Apply windows to each pieces
-        signal = torch.mul(signal.to(self.device), self.window.to(self.device))
+        signal = torch.mul(signal, self.window)
         if return_frames:
             frames = signal.clone()
         else:
@@ -548,7 +548,7 @@ class IMDCT4(nn.Module):
         assert signal.size()[-1] == self.n_fft//2, 'The last dim of input tensor should match the n_fft. Expected %d ,got %d'%(self.n_fft, signal.size()[-1])
 
         # Inverse transform at the last dim
-        signal = self.exp1*signal.to(self.device)
+        signal = self.exp1*signal
         signal = torch.fft.fft(signal,n=self.n_fft)
         signal = torch.real(signal*self.exp2)
 

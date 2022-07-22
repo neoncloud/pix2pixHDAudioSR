@@ -55,6 +55,7 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--use_hifigan_D', action='store_true', help='if specified, use multi-scale-multi-period hifigan time domain discriminator')
         self.parser.add_argument('--use_time_D', action='store_true', help='if specified, use time domain discriminator')
         self.parser.add_argument('--use_multires_D', action='store_true', help='if specified, use Multi-Resolution discriminator')
+        self.parser.add_argument('--use_shifted_match', action='store_true', help='if specified, shift audios randomly, then concat to the original ones as Discriminator inputs')
         self.parser.add_argument('--time_D_count', type=int, default=0, help='let the time D gradually increase after this number of iterations')
         self.parser.add_argument('--time_D_count_max', type=int, default=150, help='let the time D gradually increase after this number of iterations')
 

@@ -4,6 +4,7 @@ from torch.utils.data import SubsetRandomSampler
 import random
 import os
 
+
 def CreateDataset(opt):
     dataset = None
     if opt.phase == 'train':
@@ -14,7 +15,7 @@ def CreateDataset(opt):
         dataset = AudioTestDataset(opt)
 
     print("dataset [%s] was created" % (dataset.name()))
-    #dataset.initialize(opt)
+    # dataset.initialize(opt)
     return dataset
 
 class CustomDatasetDataLoader(BaseDataLoader):
@@ -26,18 +27,22 @@ class CustomDatasetDataLoader(BaseDataLoader):
         self.dataset = CreateDataset(opt)
         dataset_size = len(self.dataset)
         indices = list(range(dataset_size))
-        split = int(torch.floor(torch.Tensor([opt.validation_split * dataset_size])))
+        split = int(torch.floor(torch.Tensor(
+            [opt.validation_split * dataset_size])))
 
         if opt.val_indices is not None:
             self.val_indices = torch.load(opt.val_indices)
-            self.train_indices = torch.tensor(list(set(indices) - set(self.val_indices)))
+            self.train_indices = torch.tensor(
+                list(set(indices) - set(self.val_indices)))
         else:
             if not opt.serial_batches:
                 random.seed(opt.seed)
                 random.shuffle(indices)
             self.train_indices, self.val_indices = indices[split:], indices[:split]
-            self.data_lenth = min(len(self.train_indices), self.opt.max_dataset_size)
-            torch.save(self.val_indices, os.path.join(self.opt.checkpoints_dir, self.opt.name,'validation_indices.pt'))
+            self.data_lenth = min(len(self.train_indices),
+                                  self.opt.max_dataset_size)
+            torch.save(self.val_indices, os.path.join(
+                self.opt.checkpoints_dir, self.opt.name, 'validation_indices.pt'))
 
         # Creating PT data samplers and loaders:
         if opt.phase == "train":
