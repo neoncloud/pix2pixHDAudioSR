@@ -1,6 +1,6 @@
 import csv
 import os
-from numpy import ceil, concatenate
+from numpy import ceil
 import torch
 import torch.nn.functional as F
 import torchaudio
@@ -47,7 +47,7 @@ class AudioDataset(BaseDataset):
             waveform, orig_sample_rate = torchaudio.load(
                 file_path, frame_offset=offset, num_frames=self.segment_length)
         else:
-            print("Warning: %s is shorter than segment_length"%file_path, audio_length)
+            #print("Warning: %s is shorter than segment_length"%file_path, audio_length)
             waveform, orig_sample_rate = torchaudio.load(file_path)
         return waveform, orig_sample_rate
 
@@ -136,13 +136,14 @@ class AudioTestDataset(BaseDataset):
         return 'AudioMDCTSpectrogramTestDataset'
 
     def __getitem__(self, idx):
-        return {'image': torch.empty(1), 'label': self.seg_audio[idx, :].squeeze(0), 'inst': torch.empty(1), 'feat': torch.empty(1), 'path': self.dataroot}
+        return {'LR_audio': self.seg_audio[idx, :].squeeze(0)}
 
     def read_audio(self):
         try:
             self.raw_audio, self.in_sampling_rate = torchaudio.load(
                 self.dataroot)
             self.audio_len = self.raw_audio.size(-1)
+            self.raw_audio += 1e-4 - torch.mean(self.raw_audio)
             print("Audio length:", self.audio_len)
         except:
             self.raw_audio = []
@@ -154,8 +155,8 @@ class AudioTestDataset(BaseDataset):
         length = len(audio)
         if length >= self.segment_length:
             num_segments = int(ceil(length/self.segment_length))
-            audio = F.pad(audio, (self.overlap//2, self.segment_length *
-                          num_segments - length + self.overlap//2), "constant").data
+            audio = F.pad(audio, (self.overlap, self.segment_length *
+                          num_segments - length + self.overlap), "constant").data
             audio = audio.unfold(
                 dimension=0, size=self.segment_length, step=self.segment_length-self.overlap)
         else:

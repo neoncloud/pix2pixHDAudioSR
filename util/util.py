@@ -134,13 +134,6 @@ def compute_matrics(hr_audio,lr_audio,sr_audio,opt):
     device = sr_audio.device
     hr_audio = hr_audio.to(device)
     lr_audio = lr_audio.to(device)
-    # Match sr_audio peak value to hr_audio peak value
-    sr_audio = (sr_audio-torch.mean(sr_audio, dim=-1, keepdim=True))/torch.std(sr_audio, dim=-1, keepdim=True)
-    sr_audio = sr_audio*torch.std(hr_audio, dim=-1, keepdim=True)+torch.mean(hr_audio, dim=-1, keepdim=True)
-    #hr_audio = (hr_audio-torch.mean(hr_audio, dim=-1, keepdim=True))/torch.std(hr_audio, dim=-1, keepdim=True)
-    #lr_audio = (lr_audio-torch.mean(lr_audio, dim=-1, keepdim=True))/torch.std(lr_audio, dim=-1, keepdim=True)
-    #sr_audio = (hr_audio-hr_audio.min())/(hr_audio.max()-hr_audio.min())
-    #lr_audio = (lr_audio-lr_audio.min())/(lr_audio.max()-lr_audio.min())
 
     # Calculate error
     mse = ((sr_audio-hr_audio)**2).mean().item()
@@ -175,8 +168,8 @@ def compute_matrics(hr_audio,lr_audio,sr_audio,opt):
             pesq = 0 """
 
     # Calculte STFT loss(LSD)
-    hr_stft = aF.spectrogram(hr_audio, n_fft=2*opt.n_fft, hop_length=2*opt.hop_length, win_length=2*opt.win_length, window=kbdwin(2*opt.win_length).cuda(), center=opt.center, pad=0, power=2, normalized=False)
-    sr_stft = aF.spectrogram(sr_audio, n_fft=2*opt.n_fft, hop_length=2*opt.hop_length, win_length=2*opt.win_length, window=kbdwin(2*opt.win_length).cuda(), center=opt.center, pad=0, power=2, normalized=False)
+    hr_stft = aF.spectrogram(hr_audio, n_fft=2*opt.n_fft, hop_length=2*opt.hop_length, win_length=2*opt.win_length, window=kbdwin(2*opt.win_length).to(device), center=opt.center, pad=0, power=2, normalized=False)
+    sr_stft = aF.spectrogram(sr_audio, n_fft=2*opt.n_fft, hop_length=2*opt.hop_length, win_length=2*opt.win_length, window=kbdwin(2*opt.win_length).to(device), center=opt.center, pad=0, power=2, normalized=False)
     hr_stft_log = torch.log10(hr_stft+1e-6)
     sr_stft_log = torch.log10(sr_stft+1e-6)
     lsd = torch.sqrt(torch.mean((hr_stft_log-sr_stft_log)**2,dim=-2)).mean().item()

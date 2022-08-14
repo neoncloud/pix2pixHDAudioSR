@@ -100,6 +100,8 @@ class Audio2Spectro(torch.nn.Module):
             log_spectro = torch.arcsinh(
                 spectro)/torch.log(torch.tensor(10.0))
             #log_spectro = torch.cat((log_spectro, log_spectro.abs()), dim=1)
+        elif self.raw_mdct:
+            log_spectro = spectro
         else:
             log_spectro = aF.amplitude_to_DB(
                 (torch.abs(spectro) + self.min_value), 20.0, self.min_value, 1.0)
@@ -130,6 +132,8 @@ class Audio2Spectro(torch.nn.Module):
         #log_mag = log_mag*norm_param['std']+norm_param['mean']
         if self.arcsinh_transform:
             return torch.sinh(log_spectro*torch.log(torch.tensor(10.0)))/self.arcsinh_gain
+        if self.raw_mdct:
+            return log_spectro
         else:
             return aF.DB_to_amplitude(log_spectro, 10.0, 0.5)-self.min_value
 
@@ -140,6 +144,8 @@ class Audio2Spectro(torch.nn.Module):
             spectro = (spectro[..., 0, :, :] -
                        spectro[..., 1, :, :])/(2*self.alpha-1)
         elif self.arcsinh_transform:
+            pass
+        elif self.raw_mdct:
             pass
         else:
             if self.up_ratio > 1:
@@ -631,6 +637,9 @@ class Pix2PixHDModel(BaseModel):
 
             sr_spectro = self.netG.forward(lr_input)
             if self.fit_residual:
+                up_ratio = self.preprocess.up_ratio
+                lr_part = int(sr_spectro.size(-1)/up_ratio)
+                sr_spectro[...,:lr_part] *= 1e-3
                 sr_spectro = sr_spectro+lr_spectro
         sr_audio = self.preprocess.to_audio(sr_spectro, lr_norm_param, lr_pha)
 

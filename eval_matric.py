@@ -1,3 +1,4 @@
+import torchaudio
 from data.data_loader import CreateDataLoader
 from util.util import compute_matrics
 from options.train_options import TrainOptions
@@ -79,8 +80,13 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
                     lr_audio)
 
         ############## Evaluation Pass ####################
+        if opt.hr_sampling_rate != opt.sr_sampling_rate:
+            hr_audio = torchaudio.functional.resample(hr_audio,opt.hr_sampling_rate,opt.sr_sampling_rate).squeeze()
+            lr_audio = torchaudio.functional.resample(lr_audio,opt.hr_sampling_rate,opt.sr_sampling_rate).squeeze()
+            sr_audio = torchaudio.functional.resample(sr_audio,opt.hr_sampling_rate,opt.sr_sampling_rate).squeeze()
+            
         _mse, _snr_sr, _snr_lr, _ssnr_sr, _ssnr_lr, _pesq, _lsd = compute_matrics(
-            hr_audio.squeeze(), lr_audio.squeeze(), sr_audio.squeeze(), opt)
+            hr_audio, lr_audio.squeeze(), sr_audio.squeeze(), opt)
         err.append(_mse)
         snr.append((_snr_lr, _snr_sr))
         snr_seg.append((_ssnr_lr, _ssnr_sr))

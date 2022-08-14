@@ -4,7 +4,6 @@ from util.util import compute_matrics
 from util.visualizer import Visualizer
 from options.train_options import TrainOptions
 from models.models import create_model
-from pl_bolts.datamodules import AsynchronousLoader
 
 import math
 import os
@@ -46,7 +45,7 @@ else:
 
 # Create the data loader
 data_loader = CreateDataLoader(opt)
-dataset = AsynchronousLoader(data_loader.load_data(), device='cuda')
+dataset = data_loader.async_load_data()
 dataset_size = len(data_loader)
 eval_dataset = data_loader.eval_data()
 eval_dataset_size = data_loader.eval_data_len()

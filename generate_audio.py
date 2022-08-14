@@ -29,12 +29,12 @@ stride = opt.segment_length-opt.gen_overlap
 with torch.no_grad():
     for i, data in enumerate(dataset):
         sr_spectro, sr_audio, lr_pha, norm_param, lr_spectro = model.inference(
-            data['label'])
+            data['LR_audio'].cuda())
         print(sr_spectro.size())
-        spectro_mag.append(sr_spectro)
-        spectro_pha.append(lr_pha)
-        norm_params.append(norm_param)
-        audio.append(sr_audio)
+        # spectro_mag.append(sr_spectro)
+        # spectro_pha.append(lr_pha)
+        # norm_params.append(norm_param)
+        audio.append(sr_audio.cpu())
 
 # Concatenate the audio
 if opt.gen_overlap > 0:
@@ -42,12 +42,12 @@ if opt.gen_overlap > 0:
     out_len = (dataset_size-1) * stride + opt.segment_length
     print(out_len)
     audio = torch.cat(audio,dim=0)
+    print(audio.shape)
     audio[...,:opt.gen_overlap] *= 0.5
     audio[...,-opt.gen_overlap:] *= 0.5
     audio = audio.squeeze().transpose(-1,-2)
-    print(audio.shape)
     audio = fold(audio, kernel_size=(1,opt.segment_length), stride=(1,stride), output_size=(1,out_len)).squeeze(0)
-    audio = audio[...,opt.gen_overlap//2:-opt.gen_overlap//2]
+    audio = audio[...,opt.gen_overlap:-opt.gen_overlap]
     print(audio.shape)
 else:
     audio = torch.cat(audio, dim=0).view(1, -1)

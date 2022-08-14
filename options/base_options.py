@@ -45,6 +45,7 @@ class BaseOptions():
         self.parser.add_argument('--abs_norm', action='store_true', help='if selected, assuming the spectrograms are all distributed in a fixed range. Thus instead of normalizing by min and max each by each, normalize by an absolute range.')
         self.parser.add_argument('--src_range', type=float, default=(-5,5), nargs=2, help='specify the source ditribution range. This value is used when --abs_norm is specified.')
         self.parser.add_argument('--arcsinh_transform', action='store_true', help='if selected, using log(G*x+sqrt(((G*x)^2+1))) to compressing the range of input. Do not use this option with --explicit_encoding')
+        self.parser.add_argument('--raw_mdct', action='store_true', help='if selected, DO NO transform. Do not use this option with --explicit_encoding|arcsinh_transform')
         self.parser.add_argument('--arcsinh_gain', type=float, default=500, help='gain of arcsinh_trasform input')
         self.parser.add_argument('--add_noise', action='store_true', help='if selected, add some noise to input waveform')
         self.parser.add_argument('--snr', type=float, default=55, help='add noise by SnR (working if --add_noise is selected)')
