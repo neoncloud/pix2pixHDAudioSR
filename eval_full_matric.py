@@ -98,8 +98,8 @@ for epoch in range(start_epoch, opt.niter+1):
             sr_audio = torchaudio.functional.resample(
                 sr_audio.cpu(), opt.hr_sampling_rate, opt.sr_sampling_rate).squeeze()
 
-        print(hr_audio.size(1), sr_audio.size(1), lr_audio.size(1))
-        length = min(hr_audio.size(1), sr_audio.size(1), lr_audio.size(1))
+        print(hr_audio.size(-1), sr_audio.size(-1), lr_audio.size(-1))
+        length = min(hr_audio.size(-1), sr_audio.size(-1), lr_audio.size(-1))
 
         _mse, _snr_sr, _, _ssnr_sr, _, _pesq, _lsd = compute_matrics(
             hr_audio[..., :length], lr_audio[..., :length], sr_audio[..., :length], opt)
